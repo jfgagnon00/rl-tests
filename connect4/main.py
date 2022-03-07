@@ -1,140 +1,12 @@
-import numpy as np
+from ast import Mod
 import random
+import sys
 
+from board import *
+from rules import *
+from model import *
 
-class Rules:
-    ColorNone = 0
-    ColorBlack = 1
-    ColorRed = 2
-
-    def colorName(color):
-        names = ["-", "Black", "Red"]
-        return names[color]
-
-    ApplyInvalid = 0
-    ApplyInconclusive = 1
-    ApplyTie = 2
-    ApplyWonVertical = 3
-    ApplyWonHorizontal = 4
-    ApplyWonDiag1 = 5
-    ApplyWonDiag2 = 6
-
-    def applyName(apply):
-        names = ["Invalid", "Inconclusive", "Tie", "Won Vert", "Won Horiz", "Won Diag 1", "Won Diag 2"]
-        return names[apply]
-
-    def __init__(self, winningStreakLength):
-        if winningStreakLength < 2:
-            raise "Invalid streak length"
-        self._winningStreakLength = winningStreakLength
-
-    def apply(self, board, column, color):
-        applyResult = Rules.ApplyInvalid
-
-        if (0 <= column and column < board.width):
-            row = board.heights[column]
-            if row < board.height:
-                board.cells[row, column] = color
-                board.heights[column] = row + 1
-                applyResult = self._hasWon(board, column)
-
-                board.occupiedCells += 1
-                if applyResult == Rules.ApplyInconclusive and board.isFull():
-                    applyResult = Rules.ApplyTie
-
-        return applyResult
-
-    def _hasWon(self, board, column):
-        row = board.heights[column] - 1
-
-        # vertical
-        if (self._isWinningStreak(board, row, column, 1, 0)):
-            return Rules.ApplyWonVertical
-
-        # horizontal
-        if (self._isWinningStreak(board, row, column, 0, 1)):
-            return Rules.ApplyWonHorizontal
-
-        # diagonal 1
-        if (self._isWinningStreak(board, row, column, 1, 1)):
-            return Rules.ApplyWonDiag1
-
-        # diagonal 2
-        if (self._isWinningStreak(board, row, column, 1, -1)):
-            return Rules.ApplyWonDiag2
-
-        return Rules.ApplyInconclusive
-
-    def _isWinningStreak(self, board, row, col, dr, dc):
-        streakColor = board.cells[row, col]
-
-        while True:
-            r = row - dr
-            c = col - dc
-            if r < 0 or r >= board.height or c < 0  or c >= board.width:
-                break
-
-            color = board.cells[r, c]
-            if color != streakColor:
-                break
-
-            row = r
-            col = c
-
-        streakLength = 1
-        while True:
-            r = row + dr
-            c = col + dc
-            if r < 0 or r >= board.height or c < 0  or c >= board.width:
-                break
-
-            color = board.cells[r, c]
-            if color != streakColor:
-                break
-
-            row = r
-            col = c
-            streakLength += 1
-
-        return streakLength >= self._winningStreakLength
-
-
-class Board:
-    def __init__(self, width, height):
-        self.width = width
-        self.height = height
-        self.reset()
-
-    def reset(self):
-        self.cells = np.full((self.height, self.width), Rules.ColorNone, dtype=np.int)
-        self.heights = np.zeros(self.width, dtype=np.int)
-        self.occupiedCells = 0
-
-    def isFull(self):
-        return self.occupiedCells >= self.width * self.height
-
-    def __str__(self):
-        row = "| "
-        for c in range(self.width):
-            row += f"{c} | "
-        rows = f"{row}\n"
-
-        row = "-"
-        for c in range(self.width):
-            row += "----"
-        rows += f"{row}\n"
-
-        for r in range(self.height - 1, -1, -1):
-            row = "| "
-            for c in range(self.width):
-                color = self.cells[r, c]
-                colorName = Rules.colorName(color)[0]
-                row += f"{colorName} | "
-            rows += f"{row}\n"
-        return rows
-
-
-def Simulate(rules, board):
+def DebugSimulate(rules, board):
     print("Starting")
     print(str(board))
     print("")
@@ -157,8 +29,40 @@ def Simulate(rules, board):
         column = random.randrange(0, board.width)
         currentColor = 3 - currentColor
 
+def Train(rules,
+    board,
+    learningRate = 1e-6,
+    episodes = 10000):
+
+    model = Model(board.numCells(), board.width, board.width + 2, 0)
+
+    criterion = torch.nn.MSELoss(reduction='sum')
+    optimizer = torch.optim.SGD(model.parameters(), lr=learningRate)
+
+    # adapt to reinforcement learning
+    x = torch.linspace(-3, 3, board.numCells())
+    y = torch.linspace(-3, 3, board.width)
+
+    for e in range(episodes):
+        pred = model(x)
+
+        loss = criterion(pred, y)
+        if e % 100 == 0:
+            print(e, loss.item())
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
 
 if __name__ == "__main__":
     rules = Rules(4)
     board = Board(6, 7)
-    Simulate(rules, board)
+
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "train"
+
+    if cmd == "sim":
+        DebugSimulate(rules, board)
+
+    if cmd == "train":
+        Train(rules, board)
