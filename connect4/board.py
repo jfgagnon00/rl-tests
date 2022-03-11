@@ -8,7 +8,7 @@ class Board:
         self.reset()
 
     def reset(self):
-        self.cells = np.full((self.height, self.width), Rules.ColorNone, dtype=np.int)
+        self.cells = np.full((self.height, self.width), Rules.ColorNone, dtype=np.float)
         self.heights = np.zeros(self.width, dtype=np.int)
         self.occupiedCells = 0
 

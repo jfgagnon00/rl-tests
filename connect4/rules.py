@@ -1,11 +1,11 @@
 class Rules:
-    ColorNone = 0
-    ColorBlack = 1
-    ColorRed = 2
+    ColorNone = 0.0
+    ColorBlack = -1.0
+    ColorRed = 1.0
 
     def colorName(color):
-        names = ["-", "Black", "Red"]
-        return names[color]
+        names = ["-", "Red", "Black"]
+        return names[int(color)]
 
     ApplyInvalid = 0
     ApplyInconclusive = 1

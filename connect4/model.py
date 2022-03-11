@@ -11,7 +11,7 @@ class Model(torch.nn.Module):
             layers.append( torch.nn.Linear(hiddenLayersNumFeatures, hiddenLayersNumFeatures) )
             layers.append( torch.nn.ReLU() )
         layers.append( torch.nn.Linear(hiddenLayersNumFeatures, numOutputs) )
-        layers.append(torch.nn.Softmax(-1))
+        layers.append( torch.nn.Softmax(-1) )
 
         self._layers = torch.nn.ModuleList(layers)
 
