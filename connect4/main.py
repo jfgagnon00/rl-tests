@@ -40,23 +40,40 @@ def GetTrajectories(rules, board, model):
     currentColor = Rules.ColorRed if random.randrange(0, 1) > 0.5 else Rules.ColorBlack
 
     while True:
+        # make current color choose its action based on
+        # the state of the board
         state = board.cells.flatten()
         state = torch.from_numpy(state).float().unsqueeze(0)
-        probabilities = model(state)
 
-        distribution =  torch.distributions.Categorical(probabilities)
+        # all colors have the same model, so no distinction
+        # per color is needed
+        actionProbabilities = model(state)
+
+        # model gives probabilities per action reinforcement
+        # learning needs to randomly choose from a
+        # dristribution matching those actionProbabilities
+        # (dunno why yet); that is, it is not classification
+        # problem
+        distribution =  torch.distributions.Categorical(actionProbabilities)
         action = distribution.sample()
+        # an action is actually in which column to play token
         column = action.item()
-        logProbAction = distribution.log_prob(action).item()
 
+        # get reward and result of action
         applyResult = rules.apply(board, column, currentColor)
         reward = Reward(applyResult)
+
+        # log everything in the trajectories
+        logProbAction = distribution.log_prob(action).item()
         trajectories[int(currentColor)].append( (column, logProbAction, reward, applyResult) )
 
         if applyResult == Rules.ApplyInvalid:
+            # if current player selected an invalid move
+            # start over with same player
             continue
 
         if applyResult > Rules.ApplyInconclusive:
+            # color has won, stop
             break
 
         currentColor = -currentColor
@@ -67,7 +84,7 @@ def Train(rules,
     board,
     learningRate = 1e-6,
     gamma = 0.9,
-    episodes = 1):
+    episodes = 1000):
 
     model = Model(board.numCells(), board.width, board.width + 2, 0)
 
@@ -77,20 +94,35 @@ def Train(rules,
         board.reset()
         trajectories = GetTrajectories(rules, board, model)
 
-        # grad = 0 # suppose etre un vecteur
-        # for T in trajectories.values:
-        #     for t in range(len(T)):
-        #         r = Return(T, t, gamma)
-
+        # book equation is unreadable
+        # https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
         # https://github.com/pytorch/examples/blob/main/reinforcement_learning/reinforce.py
+        returns = []
+        for T in trajectories.values():
+            for t in range(len(T)):
+                r = Return(T, t, gamma)
+                returns.append(r)
 
-        # loss = criterion(pred, y)
-        # if e % 100 == 0:
-        #     print(e, loss.item())
+        # normalize returns
+        returns = torch.tensor(returns)
+        returns = (returns - returns.mean()) / (returns.std() + 1e-9)
 
-        # optimizer.zero_grad()
-        # loss.backward()
-        # optimizer.step()
+        grads = []
+        for T in trajectories.values():
+            for t in range(len(T)):
+                # column, logProbAction, reward, applyResult
+                _, logProbAction, _, _ = T[t]
+                grad = -logProbAction * returns[t]
+                grads.append(grad)
+
+        optimizer.zero_grad()
+        loss = torch.tensor(grads, requires_grad=True).sum()
+        if e % 100 == 0:
+            print(e, loss.item())
+        loss.backward()
+        optimizer.step()
+
+    torch.save(model.state_dict(), "connect4_model.bin")
 
 
 if __name__ == "__main__":

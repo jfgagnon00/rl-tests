@@ -14,9 +14,7 @@ def Reward(applyResult):
 def Return(trajectory, t, gamma):
     r = 0
     for tprime in range(t, len(trajectory)):
-        scale = gamma ** (tprime - t)
-
         # column, logProbAction, reward, applyResult
-        action, logProbAction, reward, state = trajectory[tprime]
-
-        r += scale * reward
+        _, _, reward, _ = trajectory[tprime]
+        r += gamma ** (tprime - t) * reward
+    return r

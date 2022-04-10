@@ -3,8 +3,11 @@ from rules import *
 
 class Board:
     def __init__(self, width, height):
+        self.cells = None
+        self.occupiedCells = 0
         self.width = width
         self.height = height
+        self.heights = None
         self.reset()
 
     def reset(self):
