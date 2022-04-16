@@ -17,11 +17,20 @@ if __name__ == "__main__":
 
     cmd = sys.argv[1] if len(sys.argv) > 1 else "train"
 
-    if cmd == "debugSim":
+    if cmd == "debugLog":
         model = RandomModel(board.width)
         simulation = Simulation(rules, board, model)
         simulation.run()
         simulation.debugLog()
+
+    elif cmd == "debugReturns":
+        with open(f"{filename}.json", 'r') as f:
+            modelParams = json.load(f)
+
+        model = Model(**modelParams)
+        model.load(filename)
+        trainer = Trainer(rules, board, model)
+        trainer.debugReturns()
 
     elif cmd == "train":
         modelParams = {
@@ -30,13 +39,14 @@ if __name__ == "__main__":
             'hiddenLayersNumFeatures': board.width + 4,
             'numHiddenLayers': 0,
         }
+
+        with open(f"{filename}.json", 'w') as f:
+            json.dump(modelParams, f)
+
         model = Model(**modelParams)
         trainer = Trainer(rules, board, model)
         trainer.train()
         model.save(filename)
-
-        with open(f"{filename}.json", 'w') as f:
-            json.dump(modelParams, f)
 
     elif cmd == "play":
         with open(f"{filename}.json", 'r') as f:
