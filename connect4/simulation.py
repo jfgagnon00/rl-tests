@@ -10,24 +10,32 @@ from trajectory_step import *
 
 
 class Simulation:
+    def randomStartColor():
+        return Rules.ColorRed if random.randrange(0, 1) > 0.5 else Rules.ColorBlack
+
     def __init__(self, rules, board, model):
         self.rules = rules
         self.board = board
         self.model = model
         self.startColor = Rules.ColorNone
-        self.winColor = Rules.ColorNone
         self.reset()
 
     def reset(self):
         self.board.reset()
+        self.winColor = Rules.ColorNone
+        self.lastColor = Rules.ColorNone
+        self.lastApplyResult = Rules.ApplyInconclusive
         self.numSteps = 0
         self.trajectories = {
             Rules.ColorBlack: [],
             Rules.ColorRed: [],
         }
 
-    def run(self):
-        currentColor = self.startColor = Rules.ColorRed if random.randrange(0, 1) > 0.5 else Rules.ColorBlack
+    def run(self, startColor=Rules.ColorNone):
+        if startColor == Rules.ColorNone:
+            startColor = Simulation.randomStartColor()
+
+        self.lastColor = self.startColor = startColor
 
         while True:
             self.numSteps += 1
@@ -53,23 +61,27 @@ class Simulation:
             column = action.item()
 
             # get reward and result of action
-            applyResult = self.rules.apply(self.board, column, currentColor)
-            reward = Reward.Get(applyResult)
+            self.lastApplyResult = self.rules.apply(self.board, column, self.lastColor)
+            reward = Reward.Get(self.lastApplyResult)
 
             # log everything in the simulation
-            trajectoryStep = TrajectoryStep(column, logProbAction, reward, applyResult)
-            self.trajectories[currentColor].append(trajectoryStep)
+            trajectoryStep = TrajectoryStep(column, logProbAction, reward, self.lastApplyResult)
+            self.trajectories[self.lastColor].append(trajectoryStep)
 
-            if applyResult == Rules.ApplyInvalid or applyResult == Rules.ApplyTie:
+            if self.lastApplyResult == Rules.ApplyInvalid:
+                # invalid move, replay
+                continue
+
+            if self.lastApplyResult == Rules.ApplyTie:
                 self.winColor = Rules.ColorNone
                 break
 
-            if applyResult > Rules.ApplyTie:
+            if self.lastApplyResult > Rules.ApplyTie:
                 # color has won, stop
-                self.winColor = currentColor
+                self.winColor = self.lastColor
                 break
 
-            currentColor = -currentColor
+            self.lastColor = -self.lastColor
 
     def play(self):
         # comptuer always starts
@@ -82,11 +94,14 @@ class Simulation:
             if currentColor == Rules.ColorBlack:
                 state = self.board.cells.flatten()
                 state = torch.from_numpy(state).float().unsqueeze(0)
-
                 actionProbabilities = self.model(state)
-                column = torch.argmax(actionProbabilities)
+                column = torch.distributions.Categorical(actionProbabilities).sample().item()
             else:
+                # display board for player
+                print()
+                print(self.board)
                 column = self._getInput()
+                print()
 
             applyResult = self.rules.apply(self.board, column, currentColor)
 
@@ -94,18 +109,24 @@ class Simulation:
             trajectoryStep = TrajectoryStep(column, 0, 0, applyResult)
             self.trajectories[currentColor].append(trajectoryStep)
 
-            print(f"{Rules.colorName(currentColor)} - {trajectoryStep.column}")
-            print(Rules.applyName(trajectoryStep.applyResult))
-            print(self.board)
-            print()
+            # log everything to console
+            print(f"{Rules.colorName(currentColor):5}: {column} - {Rules.applyName(applyResult)}")
 
-            if applyResult == Rules.ApplyInvalid or applyResult == Rules.ApplyTie:
+            if applyResult == Rules.ApplyInvalid:
+                # invalid move, replay
+                continue
+
+            if applyResult == Rules.ApplyTie:
                 self.winColor = Rules.ColorNone
+                print()
+                print(self.board)
                 break
 
             if applyResult > Rules.ApplyTie:
                 # color has won, stop
                 self.winColor = currentColor
+                print()
+                print(self.board)
                 break
 
             currentColor = -currentColor
@@ -139,7 +160,11 @@ class Simulation:
             if trajectoryStep.applyResult != testApply:
                 print("Error replay result !!!!!")
 
-            if trajectoryStep.applyResult == Rules.ApplyInvalid or trajectoryStep.applyResult == Rules.ApplyTie:
+            if trajectoryStep.applyResult == Rules.ApplyInvalid:
+                # invalid move, replay
+                continue
+
+            if trajectoryStep.applyResult == Rules.ApplyTie:
                 # color has won, stop
                 if Rules.ColorNone != self.winColor:
                     print("Error result !!!!!")

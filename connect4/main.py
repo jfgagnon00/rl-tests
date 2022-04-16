@@ -1,4 +1,5 @@
 import json
+import os.path
 import sys
 
 from board import *
@@ -44,7 +45,11 @@ if __name__ == "__main__":
             json.dump(modelParams, f)
 
         model = Model(**modelParams)
-        model.load(filename)
+
+        if os.path.exists(filename):
+            print(f"Loading weights from {filename}")
+            model.load(filename)
+
         trainer = Trainer(rules, board, model)
         trainer.train()
         model.save(filename)

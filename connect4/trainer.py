@@ -6,6 +6,8 @@ from reward import *
 
 
 class Trainer:
+    k_NormalizeExpectedReturns =  False
+
     def __init__(self, rules, board, model, learningRate = 1e-6, gamma = 0.8):
         self._gamma = gamma
         self._simulation = Simulation(rules, board, model)
@@ -20,25 +22,31 @@ class Trainer:
             self._simulation.reset()
             self._simulation.run()
 
-            if e % 100 == 0:
-                print(f"Winner: {Rules.colorName(self._simulation.winColor)}")
+            if self._simulation.lastApplyResult == Rules.ApplyInvalid:
+                # game ended with an invalid move
+                # pick color that played it
+                color = self._simulation.lastColor
+            elif self._simulation.lastApplyResult == Rules.ApplyTie:
+                # game ended with a tie
+                # pick random color
+                color = Simulation.randomStartColor()
+            else:
+                # game ended with a clear win
+                # pick winning color
+                color = self._simulation.winColor
 
-            expectedReturnGrads, lenT = self._trainTrajectory(Rules.ColorRed)
-            if e % 100 == 0:
-                print(f"{e:>5d} - r - Grad: {expectedReturnGrads:>8.2f}, Len: {lenT:>3d}")
-
-            expectedReturnGrads, lenT = self._trainTrajectory(Rules.ColorBlack)
-            if e % 100 == 0:
-                print(f"{e:>5d} - b - Grad: {expectedReturnGrads:>8.2f}, Len: {lenT:>3d}")
+            totalRewards, totalExpectedReturnGrads, lenT = self._trainTrajectory(color)
 
             if e % 100 == 0:
-                print()
+                colorName = Rules.colorName(color)
+                applyResultName = Rules.applyName(self._simulation.lastApplyResult)
+                print(f"e: {e:>5d} {colorName:5} - Len: {lenT:>3d}, Tot. Grad: {totalExpectedReturnGrads:>8.2f}, Tot. Reward: {totalRewards:>8.2f}, {applyResultName}")
 
     def debugReturns(self):
         self._simulation.reset()
         self._simulation.run()
 
-        print(f"startColor: {Rules.colorName(self._simulation.startColor)}, winColor: {Rules.colorName(self._simulation.winColor)}")
+        print(f"startColor: {Rules.colorName(self._simulation.startColor)}, winColor: {Rules.colorName(self._simulation.winColor)}, , lastColor: {Rules.colorName(self._simulation.lastColor)}")
         print(f"Gamma: {self._gamma}")
         print(f"NumSteps: {self._simulation.numSteps}")
 
@@ -47,55 +55,54 @@ class Trainer:
         print()
 
     def _debugReturns(self, color):
-        T = self._simulation.trajectories[color]
-
-        expectedReturns = []
-        for t in range(len(T)):
-            r = Reward.Return(T, t, self._gamma)
-            expectedReturns.append(r)
-
-        if False:
-            # normalize expectedReturns
-            expectedReturns = torch.tensor(expectedReturns, requires_grad=True)
-            expectedReturns = (expectedReturns - expectedReturns.mean()) / (expectedReturns.std() + 1e-9)
-
-        expectedReturnGrads = 0
-        for t in range(len(T)):
-            grad = -T[t].logProbAction * expectedReturns[t]
-            expectedReturnGrads += grad
+        expectedReturns, expectedReturnGrads, lenT = self._getExpectedInfos(color)
+        totalExpectedReturnGrads = torch.stack(expectedReturnGrads).sum().item()
 
         print(f"{Rules.colorName(color)}")
-        print(f"    Total Grads: {expectedReturnGrads}")
-        for t in range(len(T)):
+        print(f"    Total Grads: {totalExpectedReturnGrads}")
+        T = self._simulation.trajectories[color]
+        for t in range(lenT):
             ts = T[t]
-            print(f"    t: {t + 1:>3d}, G: {expectedReturns[t]:>8.2f}, r: {ts.reward:>5.1f}, logProb: {-ts.logProbAction:>6.3f}, c: {ts.column}, {Rules.applyName(ts.applyResult)}")
+            print(f"    t: {t + 1:>2d}, Return: {expectedReturns[t]:>8.2f}, Reward: {ts.reward:>5.2f}, logProb: {-ts.logProbAction:>6.3f}, c: {ts.column}, {Rules.applyName(ts.applyResult)}")
 
     def _trainTrajectory(self, color):
+        _, expectedReturnGrads, lenT = self._getExpectedInfos(color)
+
         T = self._simulation.trajectories[color]
+        totalRewards = 0.0
+        for t in range(lenT):
+            totalRewards += T[t].reward
+
+        self._optimizer.zero_grad()
+        loss = torch.stack(expectedReturnGrads).sum()
+        totalExpectedReturnGrads = loss.item()
+        loss.backward()
+        self._optimizer.step()
+
+        return totalRewards, totalExpectedReturnGrads, lenT
+
+    def _getExpectedInfos(self, color):
+        T = self._simulation.trajectories[color]
+        lenT = len(T)
 
         # book equations are unreadable
         # https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
         # https://github.com/pytorch/examples/blob/main/reinforcement_learning/reinforce.py
         expectedReturns = []
-        for t in range(len(T)):
+        for t in range(lenT):
             r = Reward.Return(T, t, self._gamma)
             expectedReturns.append(r)
 
         expectedReturns = torch.tensor(expectedReturns, requires_grad=True)
 
-        if False:
-            # normalize expectedReturns
+        # normalize expectedReturns
+        if Trainer.k_NormalizeExpectedReturns:
             expectedReturns = (expectedReturns - expectedReturns.mean()) / (expectedReturns.std() + 1e-9)
 
         expectedReturnGrads = []
-        for t in range(len(T)):
+        for t in range(lenT):
             grad = -T[t].logProbAction * expectedReturns[t]
             expectedReturnGrads.append(grad)
 
-        self._optimizer.zero_grad()
-        loss = torch.stack(expectedReturnGrads).sum()
-        expectedReturnGrads = loss.item()
-        loss.backward()
-        self._optimizer.step()
+        return expectedReturns, expectedReturnGrads, lenT
 
-        return expectedReturnGrads, len(T)
