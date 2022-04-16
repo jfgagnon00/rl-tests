@@ -12,10 +12,12 @@ class Trainer:
         self._gamma = gamma
         self._simulation = Simulation(rules, board, model)
         self._optimizer = torch.optim.SGD(model.parameters(), lr=learningRate)
+        self.totalRewardHistory = []
 
     def train(self, episodes=10000):
         print("Start new training")
 
+        self.totalRewardHistory = []
         self._simulation.model.train()
 
         for e in range(episodes):
@@ -36,6 +38,7 @@ class Trainer:
                 color = self._simulation.winColor
 
             totalRewards, totalExpectedReturnGrads, lenT = self._trainTrajectory(color)
+            self.totalRewardHistory.append(totalRewards)
 
             if e % 100 == 0:
                 colorName = Rules.colorName(color)

@@ -16,7 +16,8 @@ class SimpleModel(torch.nn.Module):
         self._layers = torch.nn.ModuleList(layers)
         self.numOutputs = numOutputs
 
-    def forward(self, x):
+    def forward(self, cells):
+        x = cells.flatten(0).float()
         for l in self._layers:
             x = l(x)
         return x

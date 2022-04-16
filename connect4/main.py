@@ -4,6 +4,7 @@ import sys
 
 from board import *
 from rules import *
+from conv_model import *
 from simple_model import *
 from random_model import *
 from simulation import *
@@ -16,7 +17,7 @@ def modelFilename(modelClass):
 def initModel(modelClass, modelParams=None):
     filename = modelFilename(modelClass)
 
-    if modelParams == None:
+    if modelParams is None:
         with open(f"{filename}.json", 'r') as f:
             modelParams = json.load(f)
 
@@ -27,20 +28,50 @@ def initModel(modelClass, modelParams=None):
 
     return model
 
-def saveModel(modelClass, modelParams):
-    filename = modelFilename(modelClass)
+def saveModel(model, modelParams):
+    filename = modelFilename(type(model))
 
     with open(f"{filename}.json", 'w') as f:
         json.dump(modelParams, f)
 
     model.save(filename)
 
+def saveRewards(totalRewardHistory):
+    i = 0
+    while True:
+        filename = f"total-history{i}.json"
+
+        if os.path.exists(filename):
+            i += 1
+            continue
+
+        with open(filename, "w") as f:
+            data = {
+                "totalRewardHistory": totalRewardHistory
+            }
+            json.dump(data, f)
+
+        break
+
 
 if __name__ == "__main__":
-    modelClass = SimpleModel
-
     rules = Rules(4)
     board = Board(6, 7)
+
+    if False:
+        modelClass = SimpleModel
+        modelParams = {
+            'numInputs': board.numCells(),
+            'numOutputs': board.width,
+            'hiddenLayersNumFeatures': board.width + 4,
+            'numHiddenLayers': 0,
+        }
+    else:
+        modelClass = ConvModel
+        modelParams = {
+            'numInputs': board.numCells(),
+            'numOutputs': board.width,
+        }
 
     cmd = sys.argv[1] if len(sys.argv) > 1 else "train"
 
@@ -56,17 +87,11 @@ if __name__ == "__main__":
         trainer.debugReturns()
 
     elif cmd == "train":
-        modelParams = {
-            'numInputs': board.numCells(),
-            'numOutputs': board.width,
-            'hiddenLayersNumFeatures': board.width + 4,
-            'numHiddenLayers': 0,
-        }
-
         model = initModel(modelClass, modelParams)
         trainer = Trainer(rules, board, model)
         trainer.train()
         saveModel(model, modelParams)
+        saveRewards(trainer.totalRewardHistory)
 
     elif cmd == "play":
         model = initModel(modelClass)

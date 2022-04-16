@@ -38,14 +38,10 @@ class Simulation:
         while True:
             self.numSteps += 1
 
-            # make current color choose its action based on
-            # the state of the board
-            state = self.board.cells.flatten()
-            state = torch.from_numpy(state).float().unsqueeze(0)
-
             # all colors have the same model, so no distinction
             # per color is needed
-            actionProbabilities = self.model(state)
+            cells = torch.from_numpy(self.board.cells)
+            actionProbabilities = self.model(cells)
 
             # model gives probabilities per action reinforcement
             # learning needs to randomly choose from a
@@ -90,9 +86,8 @@ class Simulation:
             self.numSteps += 1
 
             if currentColor == Rules.ColorBlack:
-                state = self.board.cells.flatten()
-                state = torch.from_numpy(state).float().unsqueeze(0)
-                actionProbabilities = self.model(state)
+                cells = torch.from_numpy(self.board.cells)
+                actionProbabilities = self.model(cells)
                 column = torch.distributions.Categorical(actionProbabilities).sample().item()
             else:
                 # display board for player
