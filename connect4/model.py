@@ -14,8 +14,17 @@ class Model(torch.nn.Module):
         layers.append( torch.nn.Softmax(-1) )
 
         self._layers = torch.nn.ModuleList(layers)
+        self.numOutputs = numOutputs
 
     def forward(self, x):
         for l in self._layers:
             x = l(x)
         return x
+
+    def save(self, filename):
+        torch.save(self.state_dict(), filename)
+
+    def load(self, filename):
+        data = torch.load(filename)
+        self.load_state_dict(data)
+        self.eval()

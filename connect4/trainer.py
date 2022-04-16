@@ -11,7 +11,7 @@ class Trainer:
         self._simulation = Simulation(rules, board, model)
         self._optimizer = torch.optim.SGD(model.parameters(), lr=learningRate)
 
-    def train(self, episodes = 1000000):
+    def train(self, episodes=1000):
         print("Start new training")
 
         for e in range(episodes):
@@ -31,9 +31,6 @@ class Trainer:
 
             if e % 100 == 0:
                 print()
-
-    def saveModel(self, filename="connect4_model.bin"):
-        torch.save(self._simulation.model.state_dict(), filename)
 
     def _trainTrajectory(self, color):
         T = self._simulation.trajectories[color]

@@ -1,5 +1,5 @@
-from importlib.metadata import distribution
 import random
+import sys
 import torch
 
 from board import *
@@ -22,8 +22,8 @@ class Simulation:
         self.board.reset()
         self.numSteps = 0
         self.trajectories = {
-            int(Rules.ColorBlack): [],
-            int(Rules.ColorRed): [],
+            Rules.ColorBlack: [],
+            Rules.ColorRed: [],
         }
 
     def run(self):
@@ -58,7 +58,7 @@ class Simulation:
             # log everything in the simulation
             logProbAction = distribution.log_prob(action).item()
             trajectoryStep = TrajectoryStep(column, logProbAction, reward, applyResult)
-            self.trajectories[int(currentColor)].append(trajectoryStep)
+            self.trajectories[currentColor].append(trajectoryStep)
 
             if applyResult == Rules.ApplyInvalid:
                 # if current player selected an invalid move
@@ -74,13 +74,57 @@ class Simulation:
                 self.winColor = currentColor
 
                 # mark last action of opponent as loser
-                self.trajectories[int(-currentColor)][-1].reward = -reward
+                self.trajectories[-currentColor][-1].reward = -reward
                 break
 
             currentColor = -currentColor
 
-    def print(self):
-        self.printHeader()
+    def play(self):
+        # comptuer always starts
+        # comptuer is always black
+        currentColor = self.startColor = Rules.ColorBlack
+
+        while True:
+            self.numSteps += 1
+
+            if currentColor == Rules.ColorBlack:
+                state = self.board.cells.flatten()
+                state = torch.from_numpy(state).float().unsqueeze(0)
+
+                actionProbabilities = self.model(state)
+                column = torch.argmax(actionProbabilities)
+            else:
+                column = self._getInput()
+
+            applyResult = self.rules.apply(self.board, column, currentColor)
+
+            # log everything in the simulation
+            trajectoryStep = TrajectoryStep(column, 0, 0, applyResult)
+            self.trajectories[currentColor].append(trajectoryStep)
+
+            print(f"{Rules.colorName(currentColor)} - {trajectoryStep.column}")
+            print(Rules.applyName(trajectoryStep.applyResult))
+            print(self.board)
+            print()
+
+            if applyResult == Rules.ApplyInvalid:
+                # if current player selected an invalid move
+                # start over with same player
+                continue
+
+            if applyResult == Rules.ApplyTie:
+                self.winColor = Rules.ColorNone
+                break
+
+            if applyResult > Rules.ApplyTie:
+                # color has won, stop
+                self.winColor = currentColor
+                break
+
+            currentColor = -currentColor
+
+    def debugLog(self):
+        self._printHeader()
         print()
 
         self.board.reset()
@@ -95,7 +139,6 @@ class Simulation:
             numSteps += 1
             step = steps[color]
 
-            # column, logProbAction, reward, applyResult
             trajectoryStep = self.trajectories[color][step]
 
             print(f"{Rules.colorName(color)} - {trajectoryStep.column}, reward: {trajectoryStep.reward}")
@@ -131,9 +174,20 @@ class Simulation:
         if numSteps != self.numSteps:
             print("Error result numSteps !!!!!")
 
-        self.printHeader()
+        self._printHeader()
 
-    def printHeader(self):
+    def _printHeader(self):
         print(f"startColor: {Rules.colorName(self.startColor)}")
         print(f"winColor: {Rules.colorName(self.winColor)}")
         print(f"steps: {self.numSteps}")
+
+    def _getInput(self):
+        numOutputs = self.model.numOutputs - 1
+        while True:
+            try:
+                data = input(f"Your turn [0, {numOutputs}]> ")
+                column = int(data)
+                if 0 <= column and column <= numOutputs:
+                    return column
+            finally:
+                pass

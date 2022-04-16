@@ -1,3 +1,4 @@
+import json
 import sys
 
 from board import *
@@ -9,6 +10,8 @@ from trainer import *
 
 
 if __name__ == "__main__":
+    filename = "connect4_model.bin"
+
     rules = Rules(4)
     board = Board(6, 7)
 
@@ -18,10 +21,31 @@ if __name__ == "__main__":
         model = RandomModel(board.width)
         simulation = Simulation(rules, board, model)
         simulation.run()
-        simulation.print()
+        simulation.debugLog()
 
-    if cmd == "train":
-        model = Model(board.numCells(), board.width, board.width + 4, 0)
+    elif cmd == "train":
+        modelParams = {
+            'numInputs': board.numCells(),
+            'numOutputs': board.width,
+            'hiddenLayersNumFeatures': board.width + 4,
+            'numHiddenLayers': 0,
+        }
+        model = Model(**modelParams)
         trainer = Trainer(rules, board, model)
         trainer.train()
-        trainer.saveModel()
+        model.save(filename)
+
+        with open(f"{filename}.json", 'w') as f:
+            json.dump(modelParams, f)
+
+    elif cmd == "play":
+        with open(f"{filename}.json", 'r') as f:
+            modelParams = json.load(f)
+
+        model = Model(**modelParams)
+        model.load(filename)
+        simulation = Simulation(rules, board, model)
+        simulation.play()
+
+    else:
+        print("Unknown cmd")
