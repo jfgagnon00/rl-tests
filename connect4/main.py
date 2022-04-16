@@ -4,14 +4,40 @@ import sys
 
 from board import *
 from rules import *
-from model import *
+from simple_model import *
 from random_model import *
 from simulation import *
 from trainer import *
 
 
+def modelFilename(modelClass):
+    return f"connect4_{modelClass.__name__}.bin"
+
+def initModel(modelClass, modelParams=None):
+    filename = modelFilename(modelClass)
+
+    if modelParams == None:
+        with open(f"{filename}.json", 'r') as f:
+            modelParams = json.load(f)
+
+    model = modelClass(**modelParams)
+    if os.path.exists(filename):
+        print(f"Loading weights from {filename}")
+        model.load(filename)
+
+    return model
+
+def saveModel(modelClass, modelParams):
+    filename = modelFilename(modelClass)
+
+    with open(f"{filename}.json", 'w') as f:
+        json.dump(modelParams, f)
+
+    model.save(filename)
+
+
 if __name__ == "__main__":
-    filename = "connect4_model.bin"
+    modelClass = SimpleModel
 
     rules = Rules(4)
     board = Board(6, 7)
@@ -25,11 +51,7 @@ if __name__ == "__main__":
         simulation.debugLog()
 
     elif cmd == "debugReturns":
-        with open(f"{filename}.json", 'r') as f:
-            modelParams = json.load(f)
-
-        model = Model(**modelParams)
-        model.load(filename)
+        model = initModel(modelClass)
         trainer = Trainer(rules, board, model)
         trainer.debugReturns()
 
@@ -41,25 +63,13 @@ if __name__ == "__main__":
             'numHiddenLayers': 0,
         }
 
-        with open(f"{filename}.json", 'w') as f:
-            json.dump(modelParams, f)
-
-        model = Model(**modelParams)
-
-        if os.path.exists(filename):
-            print(f"Loading weights from {filename}")
-            model.load(filename)
-
+        model = initModel(modelClass, modelParams)
         trainer = Trainer(rules, board, model)
         trainer.train()
-        model.save(filename)
+        saveModel(model, modelParams)
 
     elif cmd == "play":
-        with open(f"{filename}.json", 'r') as f:
-            modelParams = json.load(f)
-
-        model = Model(**modelParams)
-        model.load(filename)
+        model = initModel(modelClass)
         simulation = Simulation(rules, board, model)
         simulation.play()
 

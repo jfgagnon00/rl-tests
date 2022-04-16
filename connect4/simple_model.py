@@ -1,6 +1,6 @@
 import torch
 
-class Model(torch.nn.Module):
+class SimpleModel(torch.nn.Module):
     def __init__(self, numInputs, numOutputs, hiddenLayersNumFeatures, numHiddenLayers):
         super().__init__()
 

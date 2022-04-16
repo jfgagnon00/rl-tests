@@ -1,10 +1,8 @@
 import random
-import sys
 import torch
 
 from board import *
 from rules import *
-from model import *
 from reward import *
 from trajectory_step import *
 
