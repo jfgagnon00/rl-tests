@@ -13,7 +13,7 @@ class Trainer:
         self._simulation = Simulation(rules, board, model)
         self._optimizer = torch.optim.SGD(model.parameters(), lr=learningRate)
 
-    def train(self, episodes=30000):
+    def train(self, episodes=10000):
         print("Start new training")
 
         self._simulation.model.train()
