@@ -44,6 +44,7 @@ if __name__ == "__main__":
             json.dump(modelParams, f)
 
         model = Model(**modelParams)
+        model.load(filename)
         trainer = Trainer(rules, board, model)
         trainer.train()
         model.save(filename)

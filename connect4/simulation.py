@@ -48,6 +48,7 @@ class Simulation:
             # problem
             distribution = torch.distributions.Categorical(actionProbabilities)
             action = distribution.sample()
+            logProbAction = distribution.log_prob(action).item()
             # an action is actually in which column to play token
             column = action.item()
 
@@ -56,25 +57,16 @@ class Simulation:
             reward = Reward.Get(applyResult)
 
             # log everything in the simulation
-            logProbAction = distribution.log_prob(action).item()
             trajectoryStep = TrajectoryStep(column, logProbAction, reward, applyResult)
             self.trajectories[currentColor].append(trajectoryStep)
 
-            if applyResult == Rules.ApplyInvalid:
-                # if current player selected an invalid move
-                # start over with same player
-                continue
-
-            if applyResult == Rules.ApplyTie:
+            if applyResult == Rules.ApplyInvalid or applyResult == Rules.ApplyTie:
                 self.winColor = Rules.ColorNone
                 break
 
             if applyResult > Rules.ApplyTie:
                 # color has won, stop
                 self.winColor = currentColor
-
-                # mark last action of opponent as loser
-                self.trajectories[-currentColor][-1].reward = -reward
                 break
 
             currentColor = -currentColor
@@ -107,12 +99,7 @@ class Simulation:
             print(self.board)
             print()
 
-            if applyResult == Rules.ApplyInvalid:
-                # if current player selected an invalid move
-                # start over with same player
-                continue
-
-            if applyResult == Rules.ApplyTie:
+            if applyResult == Rules.ApplyInvalid or applyResult == Rules.ApplyTie:
                 self.winColor = Rules.ColorNone
                 break
 
@@ -152,15 +139,10 @@ class Simulation:
             if trajectoryStep.applyResult != testApply:
                 print("Error replay result !!!!!")
 
-            if trajectoryStep.applyResult == Rules.ApplyInvalid:
-                # if current player selected an invalid move
-                # start over with same player
-                continue
-
-            if trajectoryStep.applyResult == Rules.ApplyTie:
+            if trajectoryStep.applyResult == Rules.ApplyInvalid or trajectoryStep.applyResult == Rules.ApplyTie:
                 # color has won, stop
                 if Rules.ColorNone != self.winColor:
-                    print("Error result tie !!!!!")
+                    print("Error result !!!!!")
                 break
 
             if trajectoryStep.applyResult > Rules.ApplyTie:

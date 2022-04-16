@@ -11,7 +11,7 @@ class Trainer:
         self._simulation = Simulation(rules, board, model)
         self._optimizer = torch.optim.SGD(model.parameters(), lr=learningRate)
 
-    def train(self, episodes=1000):
+    def train(self, episodes=30000):
         print("Start new training")
 
         self._simulation.model.train()
@@ -23,13 +23,13 @@ class Trainer:
             if e % 100 == 0:
                 print(f"Winner: {Rules.colorName(self._simulation.winColor)}")
 
-            expectedReturn, lenT = self._trainTrajectory(Rules.ColorRed)
+            expectedReturnGrads, lenT = self._trainTrajectory(Rules.ColorRed)
             if e % 100 == 0:
-                print(f"{e:>5d} - r - E[r(t)]: {expectedReturn:>8.2f}, Len: {lenT:>3d}")
+                print(f"{e:>5d} - r - Grad: {expectedReturnGrads:>8.2f}, Len: {lenT:>3d}")
 
-            expectedReturn, lenT = self._trainTrajectory(Rules.ColorBlack)
+            expectedReturnGrads, lenT = self._trainTrajectory(Rules.ColorBlack)
             if e % 100 == 0:
-                print(f"{e:>5d} - b - E[r(t)]: {expectedReturn:>8.2f}, Len: {lenT:>3d}")
+                print(f"{e:>5d} - b - Grad: {expectedReturnGrads:>8.2f}, Len: {lenT:>3d}")
 
             if e % 100 == 0:
                 print()
@@ -49,23 +49,26 @@ class Trainer:
     def _debugReturns(self, color):
         T = self._simulation.trajectories[color]
 
-        # a tad different than _trainTrajectory
-        expectedReturn = []
-        expectedReturnGrad = []
-        expectedReturnGrads = 0
+        expectedReturns = []
         for t in range(len(T)):
             r = Reward.Return(T, t, self._gamma)
-            expectedReturn.append(r)
+            expectedReturns.append(r)
 
-            grad = -T[t].logProbAction * r
+        if False:
+            # normalize expectedReturns
+            expectedReturns = torch.tensor(expectedReturns, requires_grad=True)
+            expectedReturns = (expectedReturns - expectedReturns.mean()) / (expectedReturns.std() + 1e-9)
+
+        expectedReturnGrads = 0
+        for t in range(len(T)):
+            grad = -T[t].logProbAction * expectedReturns[t]
             expectedReturnGrads += grad
-            expectedReturnGrad.append(grad)
 
         print(f"{Rules.colorName(color)}")
         print(f"    Total Grads: {expectedReturnGrads}")
         for t in range(len(T)):
             ts = T[t]
-            print(f"    t: {t:>3d}, G: {expectedReturn[t]:>8.2f}, r: {ts.reward:>5.1f}, c: {ts.column}, {Rules.applyName(ts.applyResult)}")
+            print(f"    t: {t + 1:>3d}, G: {expectedReturns[t]:>8.2f}, r: {ts.reward:>5.1f}, logProb: {-ts.logProbAction:>6.3f}, c: {ts.column}, {Rules.applyName(ts.applyResult)}")
 
     def _trainTrajectory(self, color):
         T = self._simulation.trajectories[color]
@@ -73,25 +76,26 @@ class Trainer:
         # book equations are unreadable
         # https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
         # https://github.com/pytorch/examples/blob/main/reinforcement_learning/reinforce.py
-        returns = []
-        expectedReturn = 0
+        expectedReturns = []
         for t in range(len(T)):
             r = Reward.Return(T, t, self._gamma)
-            returns.append(r)
-            expectedReturn += T[t].logProbAction * r
+            expectedReturns.append(r)
 
-        # normalize returns
-        returns = torch.tensor(returns, requires_grad=True)
-        returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+        expectedReturns = torch.tensor(expectedReturns, requires_grad=True)
 
-        grads = []
+        if False:
+            # normalize expectedReturns
+            expectedReturns = (expectedReturns - expectedReturns.mean()) / (expectedReturns.std() + 1e-9)
+
+        expectedReturnGrads = []
         for t in range(len(T)):
-            grad = -T[t].logProbAction * returns[t]
-            grads.append(grad)
+            grad = -T[t].logProbAction * expectedReturns[t]
+            expectedReturnGrads.append(grad)
 
         self._optimizer.zero_grad()
-        loss = torch.stack(grads).sum()
+        loss = torch.stack(expectedReturnGrads).sum()
+        expectedReturnGrads = loss.item()
         loss.backward()
         self._optimizer.step()
 
-        return expectedReturn, len(T)
+        return expectedReturnGrads, len(T)

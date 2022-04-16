@@ -3,7 +3,7 @@ from rules import *
 class Reward:
     def Get(applyResult):
         return {
-            Rules.ApplyInvalid: -15.0,
+            Rules.ApplyInvalid: -30.0,
             Rules.ApplyInconclusive: -0.1,
             Rules.ApplyTie: 0.0,
             Rules.ApplyWonVertical: 15.0,
