@@ -7,9 +7,9 @@ class ConvModel(torch.nn.Module):
         self._bla = torch.nn.Conv2d(1, 8, 5, padding=2)
 
         layers = []
-        layers.append( torch.nn.Conv2d(1, 8, 5, padding=2) )
+        layers.append( torch.nn.Conv2d(1, 24, 5, padding=2) )
         layers.append( torch.nn.ReLU() )
-        layers.append( torch.nn.Conv2d(8, 1, 5, padding=2) )
+        layers.append( torch.nn.Conv2d(24, 1, 5, padding=2) )
         layers.append( torch.nn.ReLU() )
         layers.append( torch.nn.Flatten(0) )
         layers.append( torch.nn.Linear(numInputs, numOutputs) )
