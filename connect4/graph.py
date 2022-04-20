@@ -4,10 +4,10 @@ import numpy as np
 import os
 
 if __name__ == "__main__":
-    totalRewardHistory = np.empty(1)
+    expectedReturnHistory = np.empty(1)
     i = 0
     while True:
-        filename = f"total-history{i}.json"
+        filename = f"expected-return-history{i}.json"
 
         if not os.path.exists(filename):
             break
@@ -16,21 +16,21 @@ if __name__ == "__main__":
         with open(filename, "r") as f:
             data = json.load(f)
 
-        data = data["totalRewardHistory"]
-        totalRewardHistory = np.append(totalRewardHistory, data)
+        data = data["expectedReturnHistory"]
+        expectedReturnHistory = np.append(expectedReturnHistory, data)
 
         i += 1
 
-    w = 2000
-    yPrime = totalRewardHistory
-    y = np.convolve(totalRewardHistory, np.ones(w), 'same') / w
+    w = 1000
+    yPrime = expectedReturnHistory
+    y = np.convolve(expectedReturnHistory, np.ones(w), 'same') / w
     x = range(len(y))
 
     print(f"Plot graph")
     plt.xlabel('Episodes')
-    plt.ylabel('Total Reward')
+    plt.ylabel('Expected Return')
     # plt.plot(x, yPrime)
     plt.plot(x, y)
-    plt.ylim([-1, 1])
+    plt.ylim([0, 0.1])
     plt.show()
     print(f"Plot graph done")

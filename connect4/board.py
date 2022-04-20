@@ -11,7 +11,7 @@ class Board:
         self.reset()
 
     def reset(self):
-        self.cells = np.full((self.height, self.width), Rules.ColorNone, dtype=np.float)
+        self.cells = np.full((self.height, self.width), Rules.ColorNone, dtype=np.float32)
         self.heights = np.zeros(self.width, dtype=np.int)
         self.occupiedCells = 0
 

@@ -1,9 +1,11 @@
+import math
 import random
 import torch
 
 from board import *
 from rules import *
 from reward import *
+from time import perf_counter
 from trajectory_step import *
 
 
@@ -28,6 +30,10 @@ class Simulation:
             Rules.ColorBlack: [],
             Rules.ColorRed: [],
         }
+        self.evalModelDt = 0.0
+        self.choiceDt = 0.0
+        self.applyRulesDt = 0.0
+        self.trajectoryDt = 0.0
 
     def run(self, startColor=Rules.ColorNone):
         if startColor == Rules.ColorNone:
@@ -40,8 +46,13 @@ class Simulation:
 
             # all colors have the same model, so no distinction
             # per color is needed
+
+            t0 = perf_counter()
+
             cells = torch.from_numpy(self.board.cells)
             actionProbabilities = self.model(cells)
+
+            t01 = perf_counter()
 
             # model gives probabilities per action reinforcement
             # learning needs to randomly choose from a
@@ -50,29 +61,49 @@ class Simulation:
             # problem
             distribution = torch.distributions.Categorical(actionProbabilities)
             action = distribution.sample()
-            logProbAction = distribution.log_prob(action).item()
-            # an action is actually in which column to play token
-            column = action.item()
+            column = int(action.item())
+            # torch.distributions.Categorical.sample|log_prob are slow
+            # so replace by actionProbabilities
+            # logProbAction = distribution.log_prob(action).item()
+            logProbAction = math.log(actionProbabilities[column])
+
+            t1 = perf_counter()
 
             # get reward and result of action
             self.lastApplyResult = self.rules.apply(self.board, column, self.lastColor)
-            reward = Reward.Get(self.lastApplyResult)
+
+            t2 = perf_counter()
+
+            self.evalModelDt += t01 - t0
+            self.choiceDt += t1 - t01
+            self.applyRulesDt = t2 - t1
+
+            if self.lastApplyResult == Rules.ApplyInvalid:
+                # invalid move, forget about it and replay
+                self.numSteps -= 1
+                continue
 
             # log everything in the simulation
+            reward = Reward.Get(self.lastApplyResult)
             trajectoryStep = TrajectoryStep(column, logProbAction, reward, self.lastApplyResult)
             self.trajectories[self.lastColor].append(trajectoryStep)
 
-            if self.lastApplyResult == Rules.ApplyInvalid:
-                # invalid move, replay
-                continue
+            t3 = perf_counter()
+            self.trajectoryDt += t3 - t2
 
             if self.lastApplyResult == Rules.ApplyTie:
                 self.winColor = Rules.ColorNone
+
+                # give part of reward to opponent as well
+                self.trajectories[-self.lastColor][-1].reward = reward
                 break
 
             if self.lastApplyResult > Rules.ApplyTie:
                 # color has won, stop
                 self.winColor = self.lastColor
+
+                # since oppenent lost, penalize its last move
+                self.trajectories[-self.lastColor][-1].reward = -reward
                 break
 
             self.lastColor = -self.lastColor
@@ -145,6 +176,11 @@ class Simulation:
             print(f"{Rules.colorName(color)} - {trajectoryStep.column}, reward: {trajectoryStep.reward}")
             print(Rules.applyName(trajectoryStep.applyResult))
             testApply = self.rules.apply(self.board, trajectoryStep.column, color)
+            if testApply == Rules.ApplyInvalid:
+                # invalid move, forget about it and replay
+                numSteps -= 1
+                continue
+
             print(self.board)
             print()
 
@@ -152,10 +188,6 @@ class Simulation:
 
             if trajectoryStep.applyResult != testApply:
                 print("Error replay result !!!!!")
-
-            if trajectoryStep.applyResult == Rules.ApplyInvalid:
-                # invalid move, replay
-                continue
 
             if trajectoryStep.applyResult == Rules.ApplyTie:
                 # color has won, stop

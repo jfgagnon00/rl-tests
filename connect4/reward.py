@@ -3,9 +3,9 @@ from rules import *
 class Reward:
     def Get(applyResult):
         return {
-            Rules.ApplyInvalid: -0.5,
-            Rules.ApplyInconclusive: -0.1,
-            Rules.ApplyTie: 0.0,
+            Rules.ApplyInvalid: 0.0,
+            Rules.ApplyInconclusive: 0.0,
+            Rules.ApplyTie: 0.5,
             Rules.ApplyWonVertical: 1.0,
             Rules.ApplyWonHorizontal: 1.0,
             Rules.ApplyWonDiag1: 1.0,

@@ -14,12 +14,13 @@ from trainer import *
 def modelFilename(modelClass):
     return f"connect4_{modelClass.__name__}.bin"
 
-def initModel(modelClass, modelParams=None):
+def initModel(modelClass, modelParams=None, torchDevice=None):
     filename = modelFilename(modelClass)
 
     if modelParams is None:
         with open(f"{filename}.json", 'r') as f:
             modelParams = json.load(f)
+    modelParams["device"] = torchDevice
 
     model = modelClass(**modelParams)
     if os.path.exists(filename):
@@ -36,10 +37,10 @@ def saveModel(model, modelParams):
 
     model.save(filename)
 
-def saveRewards(totalRewardHistory):
+def saveRewards(expectedReturnHistory):
     i = 0
     while True:
-        filename = f"total-history{i}.json"
+        filename = f"expected-return-history{i}.json"
 
         if os.path.exists(filename):
             i += 1
@@ -47,7 +48,7 @@ def saveRewards(totalRewardHistory):
 
         with open(filename, "w") as f:
             data = {
-                "totalRewardHistory": totalRewardHistory
+                "expectedReturnHistory": expectedReturnHistory
             }
             json.dump(data, f)
 
@@ -55,17 +56,26 @@ def saveRewards(totalRewardHistory):
 
 
 if __name__ == "__main__":
+    if False:
+        # seems slower than CPU; to be reviewed
+        torchDeviceName = "cuda:0" if torch.cuda.is_available() else "cpu"
+    else:
+        torchDeviceName = "cpu"
+    torchDevice = torch.device(torchDeviceName)
+    print(f"Torch: {torch.__version__}, device: {torchDevice}")
+
     rules = Rules(4)
     board = Board(6, 7)
 
-    if False:
+    if True:
         modelClass = SimpleModel
         modelParams = {
             'numInputs': board.numCells(),
             'numOutputs': board.width,
-            'hiddenLayersNumFeatures': board.width + 4,
-            'numHiddenLayers': 0,
+            'hiddenLayersNumFeatures': 50,
+            'numHiddenLayers': 1,
         }
+
     else:
         modelClass = ConvModel
         modelParams = {
@@ -76,25 +86,25 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "train"
 
     if cmd == "debugLog":
-        model = RandomModel(board.width)
+        model = RandomModel(torchDevice, board.width)
         simulation = Simulation(rules, board, model)
         simulation.run()
         simulation.debugLog()
 
     elif cmd == "debugReturns":
-        model = initModel(modelClass)
+        model = initModel(modelClass, torchDevice=torchDevice)
         trainer = Trainer(rules, board, model)
         trainer.debugReturns()
 
     elif cmd == "train":
-        model = initModel(modelClass, modelParams)
+        model = initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
         trainer = Trainer(rules, board, model)
         trainer.train()
         saveModel(model, modelParams)
-        saveRewards(trainer.totalRewardHistory)
+        saveRewards(trainer.expectedReturnHistory)
 
     elif cmd == "play":
-        model = initModel(modelClass)
+        model = initModel(modelClass, torchDevice=torchDevice)
         simulation = Simulation(rules, board, model)
         simulation.play()
 
