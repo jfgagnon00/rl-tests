@@ -1,4 +1,6 @@
 import numpy as np
+
+from parameters import *
 from rules import *
 
 class Board:

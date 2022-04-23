@@ -1,68 +1,138 @@
-import multiprocessing
 import torch
 
-from joblib import Parallel, delayed
+from parameters import *
 from reward import *
 from rules import *
+from scoped_perfcounter import *
 from simulation import *
-from time import perf_counter
+from torch import multiprocessing as mp
+
+
+class Episode:
+    def __init__(self):
+        self.replays = []
+
+    def wins(self, replay):
+        wins = {
+            Rules.ColorBlack: 0,
+            Rules.ColorRed: 0,
+            Rules.ColorNone: 0, # means no winner, a tie
+        }
+
+        for r in self.replays:
+            wins[r.winColor] += 1
+
+        return wins
+
+    def evalDtMs(self):
+        iter = map(lambda r: r.evalDt, self.replays)
+        return Episode._sumMs(iter)
+
+    def choiceDtMs(self):
+        iter = map(lambda r: r.choiceDt, self.replays)
+        return Episode._sumMs(iter)
+
+    def applyRulesDtMs(self):
+        iter = map(lambda r: r.applyRulesDt, self.replays)
+        return Episode._sumMs(iter)
+
+    def trajectoryDtMs(self):
+        iter = map(lambda r: r.trajectoryDt, self.replays)
+        return Episode._sumMs(iter)
+
+    def _sumMs(iter):
+        return sum(iter) * 1000.0
 
 
 class Trainer:
-    _NormalizeGradients = False
-    _EpisodeScore = 10
     _TrainingColor = Rules.ColorBlack
 
-    def __init__(self, rules, board, model, learningRate = 1e-3, gamma = 0.8):
-        self._gamma = gamma
-        self._rules = rules
-        self._board = board
+    def __init__(self, model, parametersClass):
+        self._parameters = parametersClass
         self._model = model
-        self._optimizer = torch.optim.RMSprop(model.parameters(), lr=learningRate)
-        self._episodeDt = 0.0
-        self._backPropDt = 0.0
-        self._evalModelDt = 0.0
-        self._applyRulesDt = 0.0
-        self._choiceDt = 0.0
-        self._trajectoryDt = 0.0
+        self._optimizer = torch.optim.RMSprop(model.parameters(), lr=parametersClass.LearningRate)
+        self._gatherCounter = ScopedPerfCounter()
+        self._backPropCounter = ScopedPerfCounter()
+        self._processCount = mp.cpu_count() - 1
+        self._processRange = range(self._processCount)
+        self._processPool = None
 
-    def train(self, episodes=1000):
-        print("Start new training")
+    def startProcessPool(self):
+        if self._parameters.UseMultiprocessing:
+            self._processPool = mp.Pool(self._processCount,
+                Trainer._initProcess,
+                (self._parameters.WinningStreak, self._parameters.BoardWidth, self._parameters.BoardHeight))
+        return self
+
+    def stopProcessPool(self):
+        if self._processPool is not None:
+            self._processPool.close()
+            self._processPool.join()
+            del self._processPool
+            self._processPool = None
+
+    def train(self, saveFn=None):
+        global localSimulation
+        localSimulation = Simulation(self._parameters.WinningStreak,
+            self._parameters.BoardWidth,
+            self._parameters.BoardHeight)
 
         # one entry per episode
-        self.expectedReturnHistory = []
-        self._model.train()
+        self._gatherCounter.reset()
+        self._backPropCounter.reset()
 
-        for e in range(episodes):
-            episode = self._gatherEpisode(Trainer._EpisodeScore)
-            winFactor = 100.0 / (episode[Rules.ColorRed] + episode[Rules.ColorBlack])
+        expectedReturnsHistory = {
+            Rules.ColorBlack: [],
+            Rules.ColorRed: [],
+        }
+        eLen = 0
+        gameCount = 0
+        colors = [Rules.ColorBlack, Rules.ColorRed]
 
-            for c in [Rules.ColorBlack, Rules.ColorRed]:
-                expectedReturn = self._trainTrajectories(episode["simulations"], c)
-                self.expectedReturnHistory.append(expectedReturn)
+        if self._processPool is not None:
+            print("Waiting for process pool to init")
+            self._waitProcessPoolInit()
 
-                if e % 100 == 0:
+        print("Start training")
+        for eIndex in range(self._parameters.Episodes):
+            with self._gatherCounter:
+                e = self._gatherEpisode()
+
+            eLen += 1
+            gameCount += len(e.replays)
+
+            with self._backPropCounter:
+                for c in colors:
+                    expectedReturn = self._trainTrajectories(e.replays, c)
+                    expectedReturnsHistory[c].append(expectedReturn)
+
+            if (eIndex == self._parameters.Episodes - 1) or (eIndex % self._parameters.LogEpisodeEveryN == 0):
+                print(f"iteration {eIndex} - {gameCount} games simulated")
+
+                for c in colors:
                     colorName = Rules.colorName(c)
-                    ratioWins = int(episode[c] * winFactor)
-                    print(f"e: {e:>5d} {colorName:5} - Expected Ret: {expectedReturn:>8.2f}, Ratio Wins: {ratioWins:>3d}%")
+                    meanExpectedReturn = np.mean(expectedReturnsHistory[c][-20:])
+                    print(f"    {colorName:>14}: {meanExpectedReturn:>6.2f} Mean Exp. Ret")
 
-            if e % 100 == 0:
-                print(f"    Episode        : {self._episodeDt * 1000.0:>4.2f}ms")
-                print(f"        Eval Model : {self._evalModelDt * 1000.0:>4.2f}ms")
-                print(f"        Choice     : {self._choiceDt * 1000.0:>4.2f}ms")
-                print(f"        Apply Rules: {self._applyRulesDt * 1000.0:>4.2f}ms")
-                print(f"        Trajectory : {self._trajectoryDt * 1000.0:>4.2f}ms")
-                print(f"    Backprop       : {self._backPropDt * 1000.0:>4.2f}ms")
-                self._episodeDt = 0.0
-                self._backPropDt = 0.0
-                self._evalModelDt = 0.0
-                self._choiceDt = 0.0
-                self._applyRulesDt = 0.0
-                self._trajectoryDt = 0.0
+                print(f"    Gather Episode: {self._gatherCounter.totalMs()/eLen:>5.3f} ms/game")
+                print(f"          Backprop: {self._backPropCounter.totalMs()/eLen:>5.3f} ms/game")
                 print()
 
+                eLen = 0
+                self._gatherCounter.reset()
+                self._backPropCounter.reset()
+
+            if (eIndex == self._parameters.Episodes - 1) or (eIndex % self._parameters.SaveEveryN == 0):
+                if saveFn is not None:
+                    saveFn(expectedReturnsHistory)
+
+                expectedReturnsHistory = {
+                    Rules.ColorBlack: [],
+                    Rules.ColorRed: [],
+                }
+
     def debugReturns(self):
-        episode = self._gatherEpisodeInfo(1)
+        episode = self.__gatherCounterEpisodeInfo(1)
         simulation = episode["simulations"][-1]
 
         print(f"startColor: {Rules.colorName(simulation.startColor)}, winColor: {Rules.colorName(simulation.winColor)}, lastColor: {Rules.colorName(simulation.lastColor)}")
@@ -84,34 +154,30 @@ class Trainer:
             ts = T[t]
             print(f"    t: {t + 1:>2d}, Return: {expectedReturns[t]:>8.2f}, Reward: {ts.reward:>5.2f}, logProb: {-ts.logProbAction:>6.3f}, c: {ts.column}, {Rules.applyName(ts.applyResult)}")
 
-    def _trainTrajectories(self, simulations, color):
-        backPropStart = perf_counter()
-
-        gradients, expectedReturns = self._getTrajectoriesInfos(simulations, color)
+    def _trainTrajectories(self, replays, color):
+        gradients, expectedReturns = self._getTrajectoriesInfos(replays, color)
 
         if self._optimizer is not None:
+            self._model.train()
             self._optimizer.zero_grad()
             gradients = torch.tensor(gradients, requires_grad=True)
             gradients.mean().backward()
             self._optimizer.step()
 
-        backPropStop = perf_counter()
-        self._backPropDt += backPropStop - backPropStart
-
         return np.array(expectedReturns).mean()
 
-    def _getTrajectoriesInfos(self, simulations, color):
+    def _getTrajectoriesInfos(self, replays, color):
         # book equations are unreadable
         # https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
         # https://github.com/pytorch/examples/blob/main/reinforcement_learning/reinforce.py
         gradients = []
         expectedReturns = []
 
-        for s in simulations:
-            T = s.trajectories[color]
+        for r in replays:
+            T = r.trajectories[color]
             rangeT = range(len(T))
 
-            returnsT = [Reward.Return(T, t, self._gamma) for t in rangeT]
+            returnsT = [Reward.Return(T, t, self._parameters.Gamma) for t in rangeT]
             returnT = np.array(returnsT).sum()
             expectedReturns.append(returnT)
 
@@ -119,7 +185,7 @@ class Trainer:
             gradientsT = np.array(gradientsT)
 
             # normalize gradients
-            if Trainer._NormalizeGradients:
+            if self._parameters.NormalizeGradients:
                 gradientsT = (gradientsT - gradientsT.mean()) / (gradientsT.std() + 1e-9)
 
             gradientT = gradientsT.sum()
@@ -127,60 +193,51 @@ class Trainer:
 
         return gradients, expectedReturns
 
-    def _performSimulation(self):
-        board = Board(self._board.width, self._board.height)
-        simulation = Simulation(self._rules, board, self._model)
-        simulation.reset()
-        simulation.run()
-        return simulation
+    def _gatherEpisode(self):
+        episode = Episode()
 
-    def _gatherEpisode(self, winTreshold):
-        episodeStart = perf_counter()
+        if self._processPool is None:
+            self._model.eval()
+            replay = Trainer._localSimulate(self._model)
+            episode.replays.append(replay)
 
-        episode = {
-            "simulations": [],
+            for _ in self._processRange:
+                replay = Trainer._localSimulate(self._model)
+                episode.replays.append(replay)
+        else:
+            # start simulations on external processes
+            remoteReplays = self._processPool.map_async(Trainer._localSimulate, [self._model for i in self._processRange])
 
-            # number of wins for each color
-            # episode is complete when any color wins >= winTreshold
-            Rules.ColorBlack: 0,
-            Rules.ColorRed: 0,
-            Rules.ColorNone: 0,
-        }
+            # keep some work for ourselves
+            replay = Trainer._localSimulate(self._model)
+            episode.replays.append(replay)
 
-        cpuCount = multiprocessing.cpu_count()
-        while True:
-            if False:
-                simulations = Parallel(n_jobs=cpuCount)(delayed(self._performSimulation)() for i in range(cpuCount))
-                episode["simulations"].extend(simulations)
-
-                done = False
-                for s in simulations:
-                    episode[s.winColor] += 1
-                    if episode[s.winColor] >= winTreshold:
-                        done = True
-                    self._evalModelDt += s.evalModelDt
-                    self._choiceDt += s.choiceDt
-                    self._applyRulesDt += s.applyRulesDt
-                    self._trajectoryDt += s.trajectoryDt
-
-                if done:
-                    break
-            else:
-                simulation = Simulation(self._rules, self._board, self._model)
-                simulation.reset()
-                simulation.run()
-
-                self._evalModelDt += simulation.evalModelDt
-                self._choiceDt += simulation.choiceDt
-                self._applyRulesDt += simulation.applyRulesDt
-                self._trajectoryDt += simulation.trajectoryDt
-
-                episode["simulations"].append(simulation)
-                episode[simulation.winColor] += 1
-                if episode[simulation.winColor] >= winTreshold:
-                    break
-
-        episodeStop = perf_counter()
-        self._episodeDt += (episodeStop - episodeStart)
+            # sync external processes
+            remoteReplays.wait()
+            for r in remoteReplays.get():
+                episode.replays.append(r)
 
         return episode
+
+    def __enter__(self):
+        return self.startProcessPool()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.stopProcessPool()
+
+    def _initProcess(winningStreak, boardWidth, boardHeight):
+        global localSimulation
+        localSimulation = Simulation(winningStreak, boardWidth, boardHeight)
+
+    def _waitProcessPoolInit(self):
+        barrier = mp.Manager().Barrier(self._processCount)
+        self._processPool.map(Trainer._waitProcessInit, [barrier for _ in self._processRange])
+        del barrier
+
+    def _waitProcessInit(barrier):
+        barrier.wait()
+
+    def _localSimulate(model):
+        global localSimulation
+        localSimulation.reset()
+        return localSimulation.run(blackModel=model, redModel=model)

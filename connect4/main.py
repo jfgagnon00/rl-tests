@@ -3,11 +3,13 @@ import os.path
 import sys
 
 from board import *
-from rules import *
 from conv_model import *
-from simple_model import *
+from parameters import *
 from random_model import *
+from rules import *
+from simple_model import *
 from simulation import *
+from torch import multiprocessing as mp
 from trainer import *
 
 
@@ -32,12 +34,25 @@ def initModel(modelClass, modelParams=None, torchDevice=None):
 def saveModel(model, modelParams):
     filename = modelFilename(type(model))
 
+    device = None
+    if "device" in modelParams:
+        device =  modelParams["device"]
+        modelParams.pop("device", None)
+
     with open(f"{filename}.json", 'w') as f:
         json.dump(modelParams, f)
+
+    if device is not None:
+        modelParams["device"] = device
 
     model.save(filename)
 
 def saveRewards(expectedReturnHistory):
+    expectedReturnHistory = {
+        Rules.colorName(Rules.ColorBlack): expectedReturnHistory[Rules.ColorBlack],
+        Rules.colorName(Rules.ColorRed): expectedReturnHistory[Rules.ColorRed],
+    }
+
     i = 0
     while True:
         filename = f"expected-return-history{i}.json"
@@ -59,19 +74,17 @@ if __name__ == "__main__":
     if False:
         # seems slower than CPU; to be reviewed
         torchDeviceName = "cuda:0" if torch.cuda.is_available() else "cpu"
+        mp.set_start_method('spawn')
     else:
         torchDeviceName = "cpu"
     torchDevice = torch.device(torchDeviceName)
     print(f"Torch: {torch.__version__}, device: {torchDevice}")
 
-    rules = Rules(4)
-    board = Board(6, 7)
-
     if True:
         modelClass = SimpleModel
         modelParams = {
-            'numInputs': board.numCells(),
-            'numOutputs': board.width,
+            'numInputs': Parameters.BoardWidth * Parameters.BoardHeight,
+            'numOutputs': Parameters.BoardWidth,
             'hiddenLayersNumFeatures': 50,
             'numHiddenLayers': 1,
         }
@@ -79,34 +92,38 @@ if __name__ == "__main__":
     else:
         modelClass = ConvModel
         modelParams = {
-            'numInputs': board.numCells(),
-            'numOutputs': board.width,
+            'numInputs': Parameters.BoardWidth * Parameters.BoardHeight,
+            'numOutputs': Parameters.BoardWidth,
         }
 
     cmd = sys.argv[1] if len(sys.argv) > 1 else "train"
 
     if cmd == "debugLog":
-        model = RandomModel(torchDevice, board.width)
-        simulation = Simulation(rules, board, model)
-        simulation.run()
+        model = RandomModel(torchDevice, Parameters.BoardWidth)
+        simulation = Simulation(Parameters.WinningStreak, Parameters.BoardWidth, Parameters.BoardHeight)
+        simulation.run(model)
         simulation.debugLog()
 
     elif cmd == "debugReturns":
         model = initModel(modelClass, torchDevice=torchDevice)
-        trainer = Trainer(rules, board, model)
-        trainer.debugReturns()
+        with Trainer(model, Parameters) as trainer:
+            trainer.debugReturns()
 
     elif cmd == "train":
         model = initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
-        trainer = Trainer(rules, board, model)
-        trainer.train()
-        saveModel(model, modelParams)
-        saveRewards(trainer.expectedReturnHistory)
+        trainer = Trainer(model, Parameters)
+        with trainer:
+            def save(expectedReturnsHistory):
+                saveModel(model, modelParams)
+                saveRewards(expectedReturnsHistory)
+            trainer.train(saveFn=save)
+        del trainer
+        del model
 
     elif cmd == "play":
         model = initModel(modelClass, torchDevice=torchDevice)
-        simulation = Simulation(rules, board, model)
-        simulation.play()
+        simulation = Simulation(Parameters.WinningStreak, Parameters.BoardWidth, Parameters.BoardHeight)
+        simulation.run(blackModel=model)
 
     else:
         print("Unknown cmd")

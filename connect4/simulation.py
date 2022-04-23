@@ -3,25 +3,15 @@ import random
 import torch
 
 from board import *
+from scoped_perfcounter import *
 from rules import *
 from reward import *
-from time import perf_counter
 from trajectory_step import *
 
 
-class Simulation:
-    def randomStartColor():
-        return Rules.ColorRed if random.randrange(0, 1) > 0.5 else Rules.ColorBlack
-
-    def __init__(self, rules, board, model):
-        self.rules = rules
-        self.board = board
-        self.model = model
+class Replay:
+    def __init__(self):
         self.startColor = Rules.ColorNone
-        self.reset()
-
-    def reset(self):
-        self.board.reset()
         self.winColor = Rules.ColorNone
         self.lastColor = Rules.ColorNone
         self.lastApplyResult = Rules.ApplyInconclusive
@@ -30,136 +20,96 @@ class Simulation:
             Rules.ColorBlack: [],
             Rules.ColorRed: [],
         }
-        self.evalModelDt = 0.0
+        self.evalDt = 0.0
         self.choiceDt = 0.0
         self.applyRulesDt = 0.0
         self.trajectoryDt = 0.0
 
-    def run(self, startColor=Rules.ColorNone):
+
+class Simulation:
+    def randomStartColor():
+        return Rules.ColorRed if random.randrange(0, 1) > 0.5 else Rules.ColorBlack
+
+    def __init__(self, winningStreak, boardWidth, boardHeight):
+        self._rules = Rules(winningStreak)
+        self._board = Board(boardWidth, boardHeight)
+        self._evalCounter = ScopedPerfCounter()
+        self._choiceCounter = ScopedPerfCounter()
+        self._applyRulesCounter = ScopedPerfCounter()
+        self._trajectoryCounter = ScopedPerfCounter()
+
+    def reset(self):
+        self._board.reset()
+        self._evalCounter.reset()
+        self._choiceCounter.reset()
+        self._applyRulesCounter.reset()
+        self._trajectoryCounter.reset()
+
+    def run(self, blackModel=None, redModel=None, startColor=Rules.ColorNone):
+        replay = Replay()
+
+        playBackModel = lambda: self._modelPlayer(blackModel)
+        playRedModel = lambda: self._modelPlayer(redModel)
+        players = {
+            Rules.ColorBlack: self._humanPlayer if blackModel is None else playBackModel,
+            Rules.ColorRed: self._humanPlayer if redModel is None else playRedModel,
+        }
+
         if startColor == Rules.ColorNone:
             startColor = Simulation.randomStartColor()
 
-        self.lastColor = self.startColor = startColor
+        replay.lastColor = replay.startColor = startColor
 
         while True:
-            self.numSteps += 1
+            replay.numSteps += 1
 
-            # all colors have the same model, so no distinction
-            # per color is needed
+            # get player move
+            column, logProbAction = players[replay.lastColor]()
 
-            t0 = perf_counter()
+            # get result of action
+            with self._applyRulesCounter:
+                replay.lastApplyResult = self._rules.apply(self._board, column, replay.lastColor)
 
-            cells = torch.from_numpy(self.board.cells)
-            actionProbabilities = self.model(cells)
-
-            t01 = perf_counter()
-
-            # model gives probabilities per action reinforcement
-            # learning needs to randomly choose from a
-            # dristribution matching those actionProbabilities
-            # (dunno why yet); that is, it is not classification
-            # problem
-            distribution = torch.distributions.Categorical(actionProbabilities)
-            action = distribution.sample()
-            column = int(action.item())
-            # torch.distributions.Categorical.sample|log_prob are slow
-            # so replace by actionProbabilities
-            # logProbAction = distribution.log_prob(action).item()
-            logProbAction = math.log(actionProbabilities[column])
-
-            t1 = perf_counter()
-
-            # get reward and result of action
-            self.lastApplyResult = self.rules.apply(self.board, column, self.lastColor)
-
-            t2 = perf_counter()
-
-            self.evalModelDt += t01 - t0
-            self.choiceDt += t1 - t01
-            self.applyRulesDt = t2 - t1
-
-            if self.lastApplyResult == Rules.ApplyInvalid:
+            if replay.lastApplyResult == Rules.ApplyInvalid:
                 # invalid move, forget about it and replay
-                self.numSteps -= 1
+                replay.numSteps -= 1
                 continue
 
-            # log everything in the simulation
-            reward = Reward.Get(self.lastApplyResult)
-            trajectoryStep = TrajectoryStep(column, logProbAction, reward, self.lastApplyResult)
-            self.trajectories[self.lastColor].append(trajectoryStep)
+            # log everything
+            with self._trajectoryCounter:
+                reward = Reward.Get(replay.lastApplyResult)
+                trajectoryStep = TrajectoryStep(column, logProbAction, reward, replay.lastApplyResult)
+                replay.trajectories[replay.lastColor].append(trajectoryStep)
 
-            t3 = perf_counter()
-            self.trajectoryDt += t3 - t2
-
-            if self.lastApplyResult == Rules.ApplyTie:
-                self.winColor = Rules.ColorNone
+            if replay.lastApplyResult == Rules.ApplyTie:
+                replay.winColor = Rules.ColorNone
 
                 # give part of reward to opponent as well
-                self.trajectories[-self.lastColor][-1].reward = reward
+                replay.trajectories[-replay.lastColor][-1].reward = reward
                 break
 
-            if self.lastApplyResult > Rules.ApplyTie:
+            if replay.lastApplyResult > Rules.ApplyTie:
                 # color has won, stop
-                self.winColor = self.lastColor
+                replay.winColor = replay.lastColor
 
                 # since oppenent lost, penalize its last move
-                self.trajectories[-self.lastColor][-1].reward = -reward
+                replay.trajectories[-replay.lastColor][-1].reward = -reward
                 break
 
-            self.lastColor = -self.lastColor
+            replay.lastColor = -replay.lastColor
 
-    def play(self):
-        # comptuer always starts
-        # comptuer is always black
-        currentColor = self.startColor = Rules.ColorBlack
+        replay.evalDt += self._evalCounter.total()
+        replay.choiceDt += self._choiceCounter.total()
+        replay.applyRulesDt = self._applyRulesCounter.total()
+        replay.trajectoryDt = self._trajectoryCounter.total()
 
-        while True:
-            self.numSteps += 1
-
-            if currentColor == Rules.ColorBlack:
-                cells = torch.from_numpy(self.board.cells)
-                actionProbabilities = self.model(cells)
-                column = torch.distributions.Categorical(actionProbabilities).sample().item()
-            else:
-                # display board for player
-                print()
-                print(self.board)
-                column = self._getInput()
-                print()
-
-            applyResult = self.rules.apply(self.board, column, currentColor)
-
-            # log everything in the simulation
-            trajectoryStep = TrajectoryStep(column, 0, 0, applyResult)
-            self.trajectories[currentColor].append(trajectoryStep)
-
-            # log everything to console
-            print(f"{Rules.colorName(currentColor):5}: {column} - {Rules.applyName(applyResult)}")
-
-            if applyResult == Rules.ApplyInvalid:
-                # invalid move, replay
-                continue
-
-            if applyResult == Rules.ApplyTie:
-                self.winColor = Rules.ColorNone
-                print()
-                print(self.board)
-                break
-
-            if applyResult > Rules.ApplyTie:
-                # color has won, stop
-                self.winColor = currentColor
-                print()
-                print(self.board)
-                break
-
-            currentColor = -currentColor
+        return replay
 
     def debugLog(self):
         self._printHeader()
         print()
 
-        self.board.reset()
+        self._board.reset()
         steps = {
             int(Rules.ColorBlack): 0,
             int(Rules.ColorRed): 0,
@@ -175,13 +125,13 @@ class Simulation:
 
             print(f"{Rules.colorName(color)} - {trajectoryStep.column}, reward: {trajectoryStep.reward}")
             print(Rules.applyName(trajectoryStep.applyResult))
-            testApply = self.rules.apply(self.board, trajectoryStep.column, color)
+            testApply = self._rules.apply(self._board, trajectoryStep.column, color)
             if testApply == Rules.ApplyInvalid:
                 # invalid move, forget about it and replay
                 numSteps -= 1
                 continue
 
-            print(self.board)
+            print(self._board)
             print()
 
             steps[color] += 1
@@ -207,6 +157,36 @@ class Simulation:
             print("Error result numSteps !!!!!")
 
         self._printHeader()
+
+    def _humanPlayer(self):
+        # display _board for player
+        print()
+        print(self._board)
+        column = self._getInput()
+        print()
+
+        return column, 0
+
+    def _modelPlayer(self, model):
+        with self._evalCounter:
+            cells = torch.from_numpy(self._board.cells).to(model.device)
+            actionProbabilities = model(cells)
+
+        # model gives probabilities per action reinforcement
+        # learning needs to randomly choose from a
+        # dristribution matching those actionProbabilities
+        # (dunno why yet); that is, it is not classification
+        # problem
+        with self._choiceCounter:
+            distribution = torch.distributions.Categorical(actionProbabilities)
+            action = distribution.sample()
+            column = int(action.item())
+            # torch.distributions.Categorical.sample|log_prob are slow
+            # so replace by actionProbabilities
+            logProbAction = distribution.log_prob(action).item()
+            # logProbAction = math.log(actionProbabilities[column])
+
+        return column, logProbAction
 
     def _printHeader(self):
         print(f"startColor: {Rules.colorName(self.startColor)}")
