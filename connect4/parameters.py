@@ -9,8 +9,8 @@ class Parameters:
     Gamma = 0.8
 
     # Training parameters
-    Episodes = 10
-    LogEpisodeEveryN = 100
+    Episodes = 100000
+    LogEpisodeEveryN = 500
     SaveEveryN = 1000
-    UseMultiprocessing = False
+    UseMultiprocessing = True
     NormalizeGradients = False

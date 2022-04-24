@@ -123,7 +123,12 @@ if __name__ == "__main__":
     elif cmd == "play":
         model = initModel(modelClass, torchDevice=torchDevice)
         simulation = Simulation(Parameters.WinningStreak, Parameters.BoardWidth, Parameters.BoardHeight)
-        simulation.run(blackModel=model)
+        replay = simulation.run(blackModel=model)
+
+        # print winning move
+        print(simulation._board)
+        T = replay.trajectories[replay.lastColor]
+        print(f"{Rules.colorName(replay.winColor)}: {T[-1].column}, {Rules.applyName(replay.lastApplyResult)}")
 
     else:
         print("Unknown cmd")

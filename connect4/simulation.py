@@ -48,11 +48,12 @@ class Simulation:
     def run(self, blackModel=None, redModel=None, startColor=Rules.ColorNone):
         replay = Replay()
 
+        playHuman = lambda: self._humanPlayer(replay)
         playBackModel = lambda: self._modelPlayer(blackModel)
         playRedModel = lambda: self._modelPlayer(redModel)
         players = {
-            Rules.ColorBlack: self._humanPlayer if blackModel is None else playBackModel,
-            Rules.ColorRed: self._humanPlayer if redModel is None else playRedModel,
+            Rules.ColorBlack: playHuman if blackModel is None else playBackModel,
+            Rules.ColorRed: playHuman if redModel is None else playRedModel,
         }
 
         if startColor == Rules.ColorNone:
@@ -158,10 +159,15 @@ class Simulation:
 
         self._printHeader()
 
-    def _humanPlayer(self):
+    def _humanPlayer(self, replay):
         # display _board for player
         print()
         print(self._board)
+
+        opponent = -replay.lastColor
+        T = replay.trajectories[opponent]
+        print(f"{Rules.colorName(opponent)}: {T[-1].column}")
+
         column = self._getInput()
         print()
 
@@ -194,7 +200,7 @@ class Simulation:
         print(f"steps: {self.numSteps}")
 
     def _getInput(self):
-        numOutputs = self.model.numOutputs - 1
+        numOutputs = self._board.width - 1
         while True:
             try:
                 data = input(f"Your turn [0, {numOutputs}]> ")
