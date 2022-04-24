@@ -87,7 +87,7 @@ class Trainer:
         }
         eLen = 0
         gameCount = 0
-        colors = [Rules.ColorBlack, Rules.ColorRed]
+        trainingColors = [Rules.ColorBlack]
 
         if self._processPool is not None:
             print("Waiting for process pool to init")
@@ -102,14 +102,14 @@ class Trainer:
             gameCount += len(e.replays)
 
             with self._backPropCounter:
-                for c in colors:
+                for c in trainingColors:
                     expectedReturn = self._trainTrajectories(e.replays, c)
                     expectedReturnsHistory[c].append(expectedReturn)
 
             if (eIndex == self._parameters.Episodes - 1) or (eIndex % self._parameters.LogEpisodeEveryN == 0):
                 print(f"iteration {eIndex} - {gameCount} games simulated")
 
-                for c in colors:
+                for c in trainingColors:
                     colorName = Rules.colorName(c)
                     meanExpectedReturn = np.mean(expectedReturnsHistory[c][-20:])
                     print(f"    {colorName:>14}: {meanExpectedReturn:>6.2f} Mean Exp. Ret")

@@ -48,10 +48,12 @@ def saveModel(model, modelParams):
     model.save(filename)
 
 def saveRewards(expectedReturnHistory):
-    expectedReturnHistory = {
-        Rules.colorName(Rules.ColorBlack): expectedReturnHistory[Rules.ColorBlack],
-        Rules.colorName(Rules.ColorRed): expectedReturnHistory[Rules.ColorRed],
-    }
+    tmp = {}
+    if Rules.ColorBlack in expectedReturnHistory:
+        tmp[Rules.colorName(Rules.ColorBlack)] = expectedReturnHistory[Rules.ColorBlack]
+    if Rules.ColorRed in expectedReturnHistory:
+        tmp[Rules.colorName(Rules.ColorRed)] = expectedReturnHistory[Rules.ColorRed]
+    expectedReturnHistory = tmp
 
     i = 0
     while True:
