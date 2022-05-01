@@ -113,13 +113,20 @@ if __name__ == "__main__":
 
     elif cmd == "train":
         model = initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
-        trainer = Trainer(model, Parameters)
-        with trainer:
-            def save(expectedReturnsHistory):
-                saveModel(model, modelParams)
-                saveRewards(expectedReturnsHistory)
+        opponentModel = RandomModel(torchDevice, Parameters.BoardWidth)
+        trainer = Trainer(model, opponentModel, Parameters)
+
+        def save(expectedReturnsHistory):
+            saveModel(model, modelParams)
+            saveRewards(expectedReturnsHistory)
+        if False:
+            with trainer:
+                trainer.train(saveFn=save)
+        else:
             trainer.train(saveFn=save)
+
         del trainer
+        del opponentModel
         del model
 
     elif cmd == "play":

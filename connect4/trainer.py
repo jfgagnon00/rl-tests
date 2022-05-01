@@ -47,10 +47,11 @@ class Episode:
 class Trainer:
     _TrainingColor = Rules.ColorBlack
 
-    def __init__(self, model, parametersClass):
+    def __init__(self, trainModel, opponentModel, parametersClass):
         self._parameters = parametersClass
-        self._model = model
-        self._optimizer = torch.optim.RMSprop(model.parameters(), lr=parametersClass.LearningRate)
+        self._model = trainModel
+        self._opponentModel = opponentModel
+        self._optimizer = torch.optim.RMSprop(self._model.parameters(), lr=parametersClass.LearningRate)
         self._gatherCounter = ScopedPerfCounter()
         self._backPropCounter = ScopedPerfCounter()
         self._processCount = mp.cpu_count() - 1
@@ -161,7 +162,7 @@ class Trainer:
             self._model.train()
             self._optimizer.zero_grad()
             gradients = torch.tensor(gradients, requires_grad=True)
-            gradients.mean().backward()
+            (-gradients.mean()).backward()
             self._optimizer.step()
 
         return np.array(expectedReturns).mean()
@@ -178,10 +179,11 @@ class Trainer:
             rangeT = range(len(T))
 
             returnsT = [Reward.Return(T, t, self._parameters.Gamma) for t in rangeT]
+            meanReturnT = np.array(returnsT).mean()
             returnT = np.array(returnsT).sum()
             expectedReturns.append(returnT)
 
-            gradientsT = [-T[t].logProbAction * returnsT[t] for t in rangeT]
+            gradientsT = [T[t].logProbAction * (returnsT[t] - meanReturnT) for t in rangeT]
             gradientsT = np.array(gradientsT)
 
             # normalize gradients
@@ -198,18 +200,18 @@ class Trainer:
 
         if self._processPool is None:
             self._model.eval()
-            replay = Trainer._localSimulate(self._model)
+            replay = Trainer._localSimulate(self._model, self._opponentModel)
             episode.replays.append(replay)
 
             for _ in self._processRange:
-                replay = Trainer._localSimulate(self._model)
+                replay = Trainer._localSimulate(self._model, self._opponentModel)
                 episode.replays.append(replay)
         else:
             # start simulations on external processes
-            remoteReplays = self._processPool.map_async(Trainer._localSimulate, [self._model for i in self._processRange])
+            remoteReplays = self._processPool.starmap_async(Trainer._localSimulate, [(self._model, self._opponentModel) for i in self._processRange])
 
             # keep some work for ourselves
-            replay = Trainer._localSimulate(self._model)
+            replay = Trainer._localSimulate(self._model, self._opponentModel)
             episode.replays.append(replay)
 
             # sync external processes
@@ -237,7 +239,7 @@ class Trainer:
     def _waitProcessInit(barrier):
         barrier.wait()
 
-    def _localSimulate(model):
+    def _localSimulate(blackModel, redModel):
         global localSimulation
         localSimulation.reset()
-        return localSimulation.run(blackModel=model, redModel=model)
+        return localSimulation.run(blackModel=blackModel, redModel=redModel)
