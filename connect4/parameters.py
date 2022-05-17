@@ -1,8 +1,8 @@
 class Parameters:
     # Board and rules parameters
     WinningStreak = 4
-    BoardWidth = 6
-    BoardHeight = 7
+    BoardWidth = 7
+    BoardHeight = 6
 
     # Model parameters
     LearningRate = 1e-3
@@ -13,4 +13,3 @@ class Parameters:
     LogEpisodeEveryN = 500
     SaveEveryN = 1000
     UseMultiprocessing = True
-    NormalizeGradients = False

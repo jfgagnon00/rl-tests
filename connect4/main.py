@@ -85,10 +85,11 @@ if __name__ == "__main__":
     if True:
         modelClass = SimpleModel
         modelParams = {
-            'numInputs': Parameters.BoardWidth * Parameters.BoardHeight,
+            # * 3 due to how states are encoded
+            'numInputs': Parameters.BoardWidth * Parameters.BoardHeight * 3,
             'numOutputs': Parameters.BoardWidth,
-            'hiddenLayersNumFeatures': 50,
-            'numHiddenLayers': 1,
+            'hiddenLayersNumFeatures': 64,
+            'numHiddenLayers': 2,
         }
 
     else:
@@ -113,13 +114,15 @@ if __name__ == "__main__":
 
     elif cmd == "train":
         model = initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
-        opponentModel = RandomModel(torchDevice, Parameters.BoardWidth)
+        opponentModel = model # RandomModel(torchDevice, Parameters.BoardWidth)
         trainer = Trainer(model, opponentModel, Parameters)
 
         def save(expectedReturnsHistory):
-            saveModel(model, modelParams)
-            saveRewards(expectedReturnsHistory)
-        if False:
+            # saveModel(model, modelParams)
+            # saveRewards(expectedReturnsHistory)
+            pass
+
+        if True:
             with trainer:
                 trainer.train(saveFn=save)
         else:

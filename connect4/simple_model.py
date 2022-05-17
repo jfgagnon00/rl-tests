@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 from model_base import *
@@ -5,16 +6,15 @@ from model_base import *
 
 class SimpleModel(ModelBase):
     def __init__(self, device, numInputs, numOutputs, hiddenLayersNumFeatures, numHiddenLayers):
-        super().__init__(device, numOutputs)
+        super().__init__(device, numInputs, numOutputs)
 
         layers = []
-        layers.append( torch.nn.Flatten(0) )
-        layers.append( torch.nn.Linear(numInputs, hiddenLayersNumFeatures) )
-        layers.append( torch.nn.ReLU() )
         for i in range(numHiddenLayers):
-            layers.append( torch.nn.Linear(hiddenLayersNumFeatures, hiddenLayersNumFeatures) )
+            layers.append( torch.nn.Linear(numInputs, hiddenLayersNumFeatures) )
             layers.append( torch.nn.ReLU() )
-        layers.append( torch.nn.Linear(hiddenLayersNumFeatures, numOutputs) )
+            # layers.append( torch.nn.BatchNorm1d(hiddenLayersNumFeatures) )
+            numInputs = hiddenLayersNumFeatures
+        layers.append( torch.nn.Linear(numInputs, numOutputs) )
         layers.append( torch.nn.Softmax(-1) )
 
         self._model = torch.nn.Sequential(*layers)

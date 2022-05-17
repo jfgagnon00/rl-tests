@@ -59,7 +59,7 @@ class Trainer:
         self._processPool = None
 
     def startProcessPool(self):
-        if self._parameters.UseMultiprocessing:
+        if self._parameters.UseMultiprocessing and self._processCount > 0:
             self._processPool = mp.Pool(self._processCount,
                 Trainer._initProcess,
                 (self._parameters.WinningStreak, self._parameters.BoardWidth, self._parameters.BoardHeight))
@@ -97,7 +97,7 @@ class Trainer:
         print("Start training")
         for eIndex in range(self._parameters.Episodes):
             with self._gatherCounter:
-                e = self._gatherEpisode()
+                e = self._gatherEpisodes()
 
             eLen += 1
             gameCount += len(e.replays)
@@ -161,41 +161,44 @@ class Trainer:
         if self._optimizer is not None:
             self._model.train()
             self._optimizer.zero_grad()
-            gradients = torch.tensor(gradients, requires_grad=True)
-            (-gradients.mean()).backward()
+            gradients.mean().backward()
             self._optimizer.step()
 
-        return np.array(expectedReturns).mean()
+        return expectedReturns.mean()
 
     def _getTrajectoriesInfos(self, replays, color):
         # book equations are unreadable
         # https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
         # https://github.com/pytorch/examples/blob/main/reinforcement_learning/reinforce.py
+
+        lenR = len(replays)
         gradients = []
-        expectedReturns = []
+        expectedReturns = np.empty(lenR, dtype=np.float32)
 
-        for r in replays:
+        for ri, r in enumerate(replays):
             T = r.trajectories[color]
-            rangeT = range(len(T))
+            lenT = len(T)
+            rangeT = range(lenT)
 
-            returnsT = [Reward.Return(T, t, self._parameters.Gamma) for t in rangeT]
-            meanReturnT = np.array(returnsT).mean()
-            returnT = np.array(returnsT).sum()
-            expectedReturns.append(returnT)
+            returnsT = np.empty(lenT, dtype=np.float32)
+            futureRet = 0
+            for t in reversed(rangeT):
+                futureRet = T[t].reward + self._parameters.Gamma * futureRet
+                returnsT[t] = futureRet
 
-            gradientsT = [T[t].logProbAction * (returnsT[t] - meanReturnT) for t in rangeT]
-            gradientsT = np.array(gradientsT)
+            expectedReturns[ri] = returnsT[0]
+            returnsT = torch.from_numpy(returnsT)
 
-            # normalize gradients
-            if self._parameters.NormalizeGradients:
-                gradientsT = (gradientsT - gradientsT.mean()) / (gradientsT.std() + 1e-9)
+            logProbs = [T[t].logProbAction for t in rangeT]
+            logProbs = torch.cat(logProbs)
 
-            gradientT = gradientsT.sum()
-            gradients.append(gradientT)
+            gradient = torch.dot(-logProbs, returnsT - returnsT.mean()).view(1)
+            gradients.append(gradient)
 
+        gradients = torch.cat(gradients)
         return gradients, expectedReturns
 
-    def _gatherEpisode(self):
+    def _gatherEpisodes(self):
         episode = Episode()
 
         if self._processPool is None:

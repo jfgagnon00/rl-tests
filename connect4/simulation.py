@@ -49,8 +49,8 @@ class Simulation:
         replay = Replay()
 
         playHuman = lambda: self._humanPlayer(replay)
-        playBackModel = lambda: self._modelPlayer(blackModel)
-        playRedModel = lambda: self._modelPlayer(redModel)
+        playBackModel = lambda: self._modelPlayer(blackModel, Rules.ColorBlack)
+        playRedModel = lambda: self._modelPlayer(redModel, Rules.ColorRed)
         players = {
             Rules.ColorBlack: playHuman if blackModel is None else playBackModel,
             Rules.ColorRed: playHuman if redModel is None else playRedModel,
@@ -69,18 +69,17 @@ class Simulation:
 
             # get result of action
             with self._applyRulesCounter:
-                replay.lastApplyResult = self._rules.apply(self._board, column, replay.lastColor)
-
-            if replay.lastApplyResult == Rules.ApplyInvalid:
-                # invalid move, forget about it and replay
-                replay.numSteps -= 1
-                continue
+                replay.lastApplyResult = self._rules.apply(self._board, column.item(), replay.lastColor)
 
             # log everything
             with self._trajectoryCounter:
                 reward = Reward.Get(replay.lastApplyResult)
                 trajectoryStep = TrajectoryStep(column, logProbAction, reward, replay.lastApplyResult)
                 replay.trajectories[replay.lastColor].append(trajectoryStep)
+
+            if replay.lastApplyResult == Rules.ApplyInvalid:
+                # invalid move, stop
+                break
 
             if replay.lastApplyResult == Rules.ApplyTie:
                 replay.winColor = Rules.ColorNone
@@ -171,11 +170,18 @@ class Simulation:
         column = self._getInput()
         print()
 
-        return column, 0
+        return torch.tensor([column], dtype=torch.float32), torch.tensor([0.0], dtype=torch.float32)
 
-    def _modelPlayer(self, model):
+    def _modelPlayer(self, model, player):
         with self._evalCounter:
-            cells = torch.from_numpy(self._board.cells).to(model.device)
+            empty_positions = np.where(self._board.cells == Rules.ColorNone, 1, 0)
+            player_chips   = np.where(self._board.cells == player, 1, 0)
+            opponent_chips = np.where(self._board.cells == -player, 1, 0)
+
+            cells = np.array([empty_positions, player_chips, opponent_chips])
+            cells = cells.reshape((1, model.numInputs)).astype(np.float32)
+            cells = torch.from_numpy(cells).to(model.device)
+
             actionProbabilities = model(cells)
 
         # model gives probabilities per action reinforcement
@@ -186,13 +192,12 @@ class Simulation:
         with self._choiceCounter:
             distribution = torch.distributions.Categorical(actionProbabilities)
             action = distribution.sample()
-            column = int(action.item())
             # torch.distributions.Categorical.sample|log_prob are slow
             # so replace by actionProbabilities
-            logProbAction = distribution.log_prob(action).item()
+            logProbAction = distribution.log_prob(action)
             # logProbAction = math.log(actionProbabilities[column])
 
-        return column, logProbAction
+        return action, logProbAction
 
     def _printHeader(self):
         print(f"startColor: {Rules.colorName(self.startColor)}")
