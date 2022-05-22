@@ -7,7 +7,7 @@ class Parameters:
     # Model parameters
     LearningRate = 1e-4
     Gamma = 0.99
-    OpenAIState = True
+    OpenAIState = False
 
     # Training parameters
     Episodes = 80000
