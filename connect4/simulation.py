@@ -170,19 +170,29 @@ class Simulation:
         column = self._getInput()
         print()
 
-        return torch.tensor([column], dtype=torch.float32), torch.tensor([0.0], dtype=torch.float32)
+        action = torch.tensor([column], dtype=torch.int32)
+        # action.share_memory_()
+
+        logProbAction = torch.tensor([0.0], dtype=torch.float32)
+        # logProbAction.share_memory_()
+
+        return action, logProbAction
 
     def _modelPlayer(self, model, player):
         with self._evalCounter:
-            empty_positions = np.where(self._board.cells == Rules.ColorNone, 1, 0)
-            player_chips   = np.where(self._board.cells == player, 1, 0)
-            opponent_chips = np.where(self._board.cells == -player, 1, 0)
+            if Parameters.OpenAIState:
+                empty_positions = np.where(self._board.cells == Rules.ColorNone, 1, 0)
+                player_chips   = np.where(self._board.cells == player, 1, 0)
+                opponent_chips = np.where(self._board.cells == -player, 1, 0)
+                cells = np.array([empty_positions, player_chips, opponent_chips])
+            else:
+                cells = self._board.cells
 
-            cells = np.array([empty_positions, player_chips, opponent_chips])
             cells = cells.reshape((1, model.numInputs)).astype(np.float32)
             cells = torch.from_numpy(cells).to(model.device)
 
             actionProbabilities = model(cells)
+            actionProbabilities
 
         # model gives probabilities per action reinforcement
         # learning needs to randomly choose from a
@@ -196,6 +206,9 @@ class Simulation:
             # so replace by actionProbabilities
             logProbAction = distribution.log_prob(action)
             # logProbAction = math.log(actionProbabilities[column])
+
+        # action.share_memory_()
+        # logProbAction.share_memory_()
 
         return action, logProbAction
 

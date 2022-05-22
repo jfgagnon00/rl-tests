@@ -1,3 +1,7 @@
+"""
+Test with OpenAI and environments to check
+main.py implementation issues
+"""
 import json
 import os.path
 import random

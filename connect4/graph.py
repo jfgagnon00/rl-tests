@@ -11,21 +11,19 @@ if __name__ == "__main__":
     i = 0
     colorName = Rules.colorName(Rules.ColorBlack)
     while True:
-        filename = f"history{i}.json"
+        filename = f"expected-return-history{i}.json"
 
         if not os.path.exists(filename):
             break
 
         print(f"Reading {filename}")
         with open(filename, "r") as f:
-            data = json.load(f)
+            readData = json.load(f)
 
-
-        data = data["loss"] # [colorName]
-        data = np.append(data, data)
+        readData = readData["expectedReturnHistory"][colorName] # ["loss"] #
+        data = np.append(data, readData)
 
         i += 1
-
 
     # data = data[::10]
 

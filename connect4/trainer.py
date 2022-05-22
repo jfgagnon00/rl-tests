@@ -54,7 +54,7 @@ class Trainer:
         self._optimizer = torch.optim.RMSprop(self._model.parameters(), lr=parametersClass.LearningRate)
         self._gatherCounter = ScopedPerfCounter()
         self._backPropCounter = ScopedPerfCounter()
-        self._processCount = mp.cpu_count() - 1
+        self._processCount = 0 # mp.cpu_count() - 1
         self._processRange = range(self._processCount)
         self._processPool = None
 
@@ -86,6 +86,14 @@ class Trainer:
             Rules.ColorBlack: [],
             Rules.ColorRed: [],
         }
+        wins = {
+            Rules.ColorBlack: [],
+            Rules.ColorRed: [],
+        }
+        draws = {
+            Rules.ColorBlack: [],
+            Rules.ColorRed: [],
+        }
         eLen = 0
         gameCount = 0
         trainingColors = [Rules.ColorBlack]
@@ -104,8 +112,10 @@ class Trainer:
 
             with self._backPropCounter:
                 for c in trainingColors:
-                    expectedReturn = self._trainTrajectories(e.replays, c)
+                    expectedReturn, meanWins, meanDraws = self._trainTrajectories(e.replays, c)
                     expectedReturnsHistory[c].append(expectedReturn)
+                    wins[c].append(meanWins)
+                    draws[c].append(meanDraws)
 
             if (eIndex == self._parameters.Episodes - 1) or (eIndex % self._parameters.LogEpisodeEveryN == 0):
                 print(f"iteration {eIndex} - {gameCount} games simulated")
@@ -113,7 +123,11 @@ class Trainer:
                 for c in trainingColors:
                     colorName = Rules.colorName(c)
                     meanExpectedReturn = np.mean(expectedReturnsHistory[c][-20:])
+                    meanWins = np.mean(wins[c][-20:])
+                    meanDraws = np.mean(draws[c][-20:])
                     print(f"    {colorName:>14}: {meanExpectedReturn:>6.2f} Mean Exp. Ret")
+                    print(f"    {colorName:>14}: {meanWins:>6.2f} meanWins")
+                    print(f"    {colorName:>14}: {meanDraws:>6.2f} meanDraws")
 
                 print(f"    Gather Episode: {self._gatherCounter.totalMs()/eLen:>5.3f} ms/game")
                 print(f"          Backprop: {self._backPropCounter.totalMs()/eLen:>5.3f} ms/game")
@@ -131,6 +145,15 @@ class Trainer:
                     Rules.ColorBlack: [],
                     Rules.ColorRed: [],
                 }
+                wins = {
+                    Rules.ColorBlack: [],
+                    Rules.ColorRed: [],
+                }
+                draws = {
+                    Rules.ColorBlack: [],
+                    Rules.ColorRed: [],
+                }
+
 
     def debugReturns(self):
         episode = self.__gatherCounterEpisodeInfo(1)
@@ -146,7 +169,7 @@ class Trainer:
 
     def _debugReturns(self, simulation, color):
         T = simulation.trajectories[color]
-        _, expectedReturns = self._getTrajectoriesInfos([T], color)
+        _, expectedReturns, meanWins, meanDraws = self._getTrajectoriesInfos([T], color)
         expectedReturn = np.array(expectedReturns).mean()
 
         print(f"{Rules.colorName(color)}")
@@ -156,7 +179,7 @@ class Trainer:
             print(f"    t: {t + 1:>2d}, Return: {expectedReturns[t]:>8.2f}, Reward: {ts.reward:>5.2f}, logProb: {-ts.logProbAction:>6.3f}, c: {ts.column}, {Rules.applyName(ts.applyResult)}")
 
     def _trainTrajectories(self, replays, color):
-        gradients, expectedReturns = self._getTrajectoriesInfos(replays, color)
+        gradients, expectedReturns, meanWins, meanDraws = self._getTrajectoriesInfos(replays, color)
 
         if self._optimizer is not None:
             self._model.train()
@@ -164,7 +187,7 @@ class Trainer:
             gradients.mean().backward()
             self._optimizer.step()
 
-        return expectedReturns.mean()
+        return expectedReturns.mean().item(), meanWins, meanDraws
 
     def _getTrajectoriesInfos(self, replays, color):
         # book equations are unreadable
@@ -174,6 +197,8 @@ class Trainer:
         lenR = len(replays)
         gradients = []
         expectedReturns = np.empty(lenR, dtype=np.float32)
+        meanWins = 0.0
+        meanDraws = 0.0
 
         for ri, r in enumerate(replays):
             T = r.trajectories[color]
@@ -195,8 +220,13 @@ class Trainer:
             gradient = torch.dot(-logProbs, returnsT - returnsT.mean()).view(1)
             gradients.append(gradient)
 
+            meanWins += 1.0 if r.winColor == color else 0.0
+            meanDraws += 1.0 if r.winColor == Rules.ColorNone else 0.0
+
+        meanWins /= lenR
+        meanDraws /= lenR
         gradients = torch.cat(gradients)
-        return gradients, expectedReturns
+        return gradients, expectedReturns, meanWins, meanDraws
 
     def _gatherEpisodes(self):
         episode = Episode()

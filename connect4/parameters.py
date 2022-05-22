@@ -5,11 +5,12 @@ class Parameters:
     BoardHeight = 6
 
     # Model parameters
-    LearningRate = 1e-3
-    Gamma = 0.8
+    LearningRate = 1e-4
+    Gamma = 0.99
+    OpenAIState = True
 
     # Training parameters
     Episodes = 80000
     LogEpisodeEveryN = 500
     SaveEveryN = 1000
-    UseMultiprocessing = True
+    UseMultiprocessing = False

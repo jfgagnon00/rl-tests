@@ -83,13 +83,16 @@ if __name__ == "__main__":
     print(f"Torch: {torch.__version__}, device: {torchDevice}")
 
     if True:
+        numInputs = Parameters.BoardWidth * Parameters.BoardHeight
+        if Parameters.OpenAIState:
+            numInputs *= 3
+
         modelClass = SimpleModel
         modelParams = {
-            # * 3 due to how states are encoded
-            'numInputs': Parameters.BoardWidth * Parameters.BoardHeight * 3,
+            'numInputs': numInputs,
             'numOutputs': Parameters.BoardWidth,
-            'hiddenLayersNumFeatures': 64,
-            'numHiddenLayers': 2,
+            'hiddenLayersNumFeatures': 30,
+            'numHiddenLayers': 3,
         }
 
     else:
@@ -102,7 +105,7 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "train"
 
     if cmd == "debugLog":
-        model = RandomModel(torchDevice, Parameters.BoardWidth)
+        model = RandomModel(torchDevice, modelParams["numInputs"], modelParams["numOutputs"])
         simulation = Simulation(Parameters.WinningStreak, Parameters.BoardWidth, Parameters.BoardHeight)
         simulation.run(model)
         simulation.debugLog()
@@ -114,13 +117,13 @@ if __name__ == "__main__":
 
     elif cmd == "train":
         model = initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
-        opponentModel = model # RandomModel(torchDevice, Parameters.BoardWidth)
+        # opponentModel = initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
+        opponentModel = RandomModel(torchDevice, modelParams["numInputs"], modelParams["numOutputs"])
         trainer = Trainer(model, opponentModel, Parameters)
 
         def save(expectedReturnsHistory):
-            # saveModel(model, modelParams)
-            # saveRewards(expectedReturnsHistory)
-            pass
+            saveModel(model, modelParams)
+            saveRewards(expectedReturnsHistory)
 
         if True:
             with trainer:
