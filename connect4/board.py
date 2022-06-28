@@ -29,6 +29,12 @@ class Board:
         other.heights = np.copy(self.heights)
         other.occupiedCells = self.occupiedCells
 
+    def algorithmState(self, color):
+        empty_positions = np.where(self.cells == Rules.ColorNone, 1, 0)
+        player_chips = np.where(self.cells == color, 1, 0)
+        opponent_chips = np.where(self.cells == -color, 1, 0)
+        return np.array([empty_positions, player_chips, opponent_chips])
+
     def __str__(self):
         row = "| "
         for c in range(self.width):

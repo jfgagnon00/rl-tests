@@ -113,7 +113,7 @@ class Simulation:
 
     def _modelPlayer(self, model, color, algorithm):
         with self._evalCounter:
-            return algorithm.eval(self._board.cells, model, color)
+            return algorithm.eval(self._board, model, color)
 
     def _humanPlayer(self, replay):
         # display _board for player

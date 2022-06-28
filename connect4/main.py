@@ -11,6 +11,7 @@ from simple_model import *
 from simulation import *
 from trainer import *
 from reinforce import *
+from dqn import *
 
 
 def modelFilename(modelClass):
@@ -73,43 +74,28 @@ if __name__ == "__main__":
     torchDevice = torch.device(torchDeviceName)
     print(f"Torch: {torch.__version__}, device: {torchDevice}")
 
-    if True:
-        numInputs = Parameters.BoardWidth * Parameters.BoardHeight
-        if Parameters.OpenAIState:
-            numInputs *= 3
-
-        modelClass = SimpleModel
-        modelParams = {
-            'numInputs': numInputs,
-            'numOutputs': Parameters.BoardWidth,
-            'hiddenLayersNumFeatures': 30,
-            'numHiddenLayers': 3,
-        }
-
-    else:
-        modelClass = ConvModel
-        modelParams = {
-            'numInputs': Parameters.BoardWidth * Parameters.BoardHeight,
-            'numOutputs': Parameters.BoardWidth,
-        }
-
     cmd = sys.argv[1] if len(sys.argv) > 1 else "train"
 
     if cmd == "train":
-        randomModel = RandomModel(torchDevice, modelParams["numInputs"], modelParams["numOutputs"])
-        blackModel = initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
+        randomModel = RandomModel(torchDevice,
+            Parameters.ModelParams["numInputs"],
+            Parameters.ModelParams["numOutputs"])
+
+        blackModel = initModel(Parameters.ModelClass,
+            modelParams=Parameters.ModelParams,
+            torchDevice=torchDevice)
         redModel = randomModel # initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
-        algorithm = Reinforce(Parameters)
+        algorithm = Parameters.AlgorithmClass(**Parameters.AlgorithmParams)
         trainer = Trainer(Parameters, algorithm, blackModel, redModel)
 
         def save(expectedReturnsHistory):
-            saveModel(blackModel, modelParams)
+            saveModel(blackModel, Parameters.ModelParams)
             saveRewards(expectedReturnsHistory)
 
         trainer.train(saveFn=save)
 
     elif cmd == "play":
-        blackModel = initModel(modelClass, torchDevice=torchDevice)
+        blackModel = initModel(Parameters.ModelClass, torchDevice=torchDevice)
         simulation = Simulation(Parameters.WinningStreak, Parameters.BoardWidth, Parameters.BoardHeight)
         replay = simulation.run(blackModel=blackModel)
 

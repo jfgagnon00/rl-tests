@@ -6,12 +6,11 @@ from rules import *
 
 class Reinforce(Algorithm):
 
-    def __init__(self, parameters):
-        self._parameters = parameters
-        self._epsilonThreshold = parameters.EpsilonThreshold
+    def __init__(self, gamma=0.8):
+        self._gamma = gamma
 
-    def eval(self, cells, model, color):
-        actionProbabilities = self._sample(cells, model, color)
+    def eval(self, board, model, color):
+        actionProbabilities = self._sample(board, model, color)
 
         # reinforcement learning needs to randomly choose from
         # a dristribution matching those actionProbabilities
@@ -33,7 +32,7 @@ class Reinforce(Algorithm):
         futureRet = 0
         returnsT = np.empty(lenT, dtype=np.float32)
         for t in reversed(rangeT):
-            futureRet = simulationTrajectory.rewards[t] + self._parameters.Gamma * futureRet
+            futureRet = simulationTrajectory.rewards[t] + self._gamma * futureRet
             returnsT[t] = futureRet
         returns = torch.from_numpy(returnsT)
 
@@ -46,16 +45,11 @@ class Reinforce(Algorithm):
         return returnsT
 
     def update(self):
-        self._epsilonThreshold *= self._parameters.EpsilonDecay
+        pass
 
-    def _sample(self, cells, model, color):
-        if self._parameters.OpenAIState:
-            empty_positions = np.where(cells == Rules.ColorNone, 1, 0)
-            player_chips = np.where(cells == color, 1, 0)
-            opponent_chips = np.where(cells == -color, 1, 0)
-            cells = np.array([empty_positions, player_chips, opponent_chips])
+    def _sample(self, board, model, color):
+        algorithmState = board.algorithmState()
+        algorithmState = algorithmState.reshape((1, model.numInputs)).astype(np.float32)
+        algorithmState = torch.from_numpy(algorithmState).to(model.device)
 
-        cells = cells.reshape((1, model.numInputs)).astype(np.float32)
-        cells = torch.from_numpy(cells).to(model.device)
-
-        return model(cells)
+        return model(algorithmState)

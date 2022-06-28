@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 class Algorithm(ABC):
     @abstractmethod
-    def eval(self, cells, model, color):
+    def eval(self, board, model, color):
         """
         Returns tuple:
             action (cpu readable)
