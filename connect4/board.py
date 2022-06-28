@@ -13,7 +13,7 @@ class Board:
         self.reset()
 
     def reset(self):
-        self.cells = np.full((self.height, self.width), Rules.ColorNone, dtype=np.float32)
+        self.cells = np.full((self.height, self.width), Rules.ColorNone, dtype=np.int)
         self.heights = np.zeros(self.width, dtype=np.int)
         self.occupiedCells = 0
 
@@ -22,6 +22,12 @@ class Board:
 
     def isFull(self):
         return self.occupiedCells >= self.numCells()
+
+    def clone(self):
+        other = Board(self.width, self.height)
+        other.cells = np.copy(self.cells)
+        other.heights = np.copy(self.heights)
+        other.occupiedCells = self.occupiedCells
 
     def __str__(self):
         row = "| "

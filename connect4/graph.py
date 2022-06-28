@@ -9,9 +9,8 @@ from rules import *
 if __name__ == "__main__":
     data = np.empty(1)
     i = 0
-    colorName = Rules.colorName(Rules.ColorBlack)
     while True:
-        filename = f"expected-return-history{i}.json"
+        filename = f"history/expected-return-history{i}.json"
 
         if not os.path.exists(filename):
             break
@@ -20,7 +19,7 @@ if __name__ == "__main__":
         with open(filename, "r") as f:
             readData = json.load(f)
 
-        readData = readData["expectedReturnHistory"][colorName] # ["loss"] #
+        readData = readData["expectedReturnHistory"] # ["loss"] #
         data = np.append(data, readData)
 
         i += 1

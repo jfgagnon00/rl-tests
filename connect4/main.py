@@ -9,8 +9,8 @@ from random_model import *
 from rules import *
 from simple_model import *
 from simulation import *
-from torch import multiprocessing as mp
 from trainer import *
+from reinforce import *
 
 
 def modelFilename(modelClass):
@@ -48,16 +48,12 @@ def saveModel(model, modelParams):
     model.save(filename)
 
 def saveRewards(expectedReturnHistory):
-    tmp = {}
-    if Rules.ColorBlack in expectedReturnHistory:
-        tmp[Rules.colorName(Rules.ColorBlack)] = expectedReturnHistory[Rules.ColorBlack]
-    if Rules.ColorRed in expectedReturnHistory:
-        tmp[Rules.colorName(Rules.ColorRed)] = expectedReturnHistory[Rules.ColorRed]
-    expectedReturnHistory = tmp
+    if not os.path.exists("history"):
+        os.makedirs("history")
 
     i = 0
     while True:
-        filename = f"expected-return-history{i}.json"
+        filename = f"history/expected-return-history{i}.json"
 
         if os.path.exists(filename):
             i += 1
@@ -73,12 +69,7 @@ def saveRewards(expectedReturnHistory):
 
 
 if __name__ == "__main__":
-    if False:
-        # seems slower than CPU; to be reviewed
-        torchDeviceName = "cuda:0" if torch.cuda.is_available() else "cpu"
-        mp.set_start_method('spawn')
-    else:
-        torchDeviceName = "cpu"
+    torchDeviceName = "cpu"
     torchDevice = torch.device(torchDeviceName)
     print(f"Torch: {torch.__version__}, device: {torchDevice}")
 
@@ -104,41 +95,23 @@ if __name__ == "__main__":
 
     cmd = sys.argv[1] if len(sys.argv) > 1 else "train"
 
-    if cmd == "debugLog":
-        model = RandomModel(torchDevice, modelParams["numInputs"], modelParams["numOutputs"])
-        simulation = Simulation(Parameters.WinningStreak, Parameters.BoardWidth, Parameters.BoardHeight)
-        simulation.run(model)
-        simulation.debugLog()
-
-    elif cmd == "debugReturns":
-        model = initModel(modelClass, torchDevice=torchDevice)
-        with Trainer(model, Parameters) as trainer:
-            trainer.debugReturns()
-
-    elif cmd == "train":
-        model = initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
-        # opponentModel = initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
-        opponentModel = RandomModel(torchDevice, modelParams["numInputs"], modelParams["numOutputs"])
-        trainer = Trainer(model, opponentModel, Parameters)
+    if cmd == "train":
+        randomModel = RandomModel(torchDevice, modelParams["numInputs"], modelParams["numOutputs"])
+        blackModel = initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
+        redModel = randomModel # initModel(modelClass, modelParams=modelParams, torchDevice=torchDevice)
+        algorithm = Reinforce(Parameters)
+        trainer = Trainer(Parameters, algorithm, blackModel, redModel)
 
         def save(expectedReturnsHistory):
-            saveModel(model, modelParams)
+            saveModel(blackModel, modelParams)
             saveRewards(expectedReturnsHistory)
 
-        if True:
-            with trainer:
-                trainer.train(saveFn=save)
-        else:
-            trainer.train(saveFn=save)
-
-        del trainer
-        del opponentModel
-        del model
+        trainer.train(saveFn=save)
 
     elif cmd == "play":
-        model = initModel(modelClass, torchDevice=torchDevice)
+        blackModel = initModel(modelClass, torchDevice=torchDevice)
         simulation = Simulation(Parameters.WinningStreak, Parameters.BoardWidth, Parameters.BoardHeight)
-        replay = simulation.run(blackModel=model)
+        replay = simulation.run(blackModel=blackModel)
 
         # print winning move
         print(simulation._board)

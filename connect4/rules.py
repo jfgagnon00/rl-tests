@@ -1,7 +1,7 @@
 class Rules:
-    ColorNone = 0.0
-    ColorBlack = -1.0
-    ColorRed = 1.0
+    ColorNone = 0
+    ColorBlack = -1
+    ColorRed = 1
 
     def colorName(color):
         names = ["-", "Red", "Black"]

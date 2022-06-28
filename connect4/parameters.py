@@ -6,11 +6,12 @@ class Parameters:
 
     # Model parameters
     LearningRate = 1e-4
-    Gamma = 0.99
-    OpenAIState = False
+    Gamma = 0.9
+    OpenAIState = True
 
     # Training parameters
-    Episodes = 80000
-    LogEpisodeEveryN = 500
-    SaveEveryN = 1000
-    UseMultiprocessing = False
+    Episodes = 20000
+    LogEpisodeEveryN = 1000
+    SaveEveryN = 2000
+    EpsilonThreshold = 0.8
+    EpsilonDecay = 0.99
